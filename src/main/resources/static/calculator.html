@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Carbon Calculator</title>
+<meta name="description" content="How much CO₂ you save by running a task in Ontario's cleanest hours instead of right now.">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="./">Clean Hour</a>
+  <a href="./">Dashboard</a>
+  <a href="calculator.html" aria-current="page">Carbon Calculator</a>
+  <a href="reports.html">Reports</a>
+</nav>
+<header class="top">
+  <div>
+    <h1>Carbon Calculator</h1>
+    <p class="sub">See how much CO₂ you save by running a task in the cleanest hours of the next day instead of right now.</p>
+  </div>
+  <div class="updated" id="updated">Loading forecast…</div>
+</header>
+
+<main>
+  <article class="card">
+    <div class="card-head">
+      <h2>Your tasks</h2>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn small" type="button" id="add">+ Add a task</button>
+        <button class="btn small" type="button" id="reset">Reset to defaults</button>
+      </div>
+    </div>
+    <div class="task-head" aria-hidden="true"><span>Task</span><span>Energy (kWh)</span><span>Runs for (h)</span><span>Best time and saving</span><span></span></div>
+    <div class="tasks" id="tasks"></div>
+    <p class="basis">Change the energy and run time to match your appliance. Your changes are kept in this browser. Select a task to see its window on the chart below.</p>
+  </article>
+
+  <article class="card">
+    <h2>If you move all of these tasks to their best time</h2>
+    <div class="total-save" id="totals"></div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h2 id="chart-title">Carbon intensity, now and the next 24 hours</h2>
+      <ul class="legend inline">
+        <li><span class="sw sw-actual"></span>Now</li>
+        <li><span class="sw sw-forecast"></span>Forecast</li>
+        <li><span class="sw sw-best"></span>Best window for selected task</li>
+      </ul>
+    </div>
+    <div class="chart" id="chart"></div>
+    <p class="basis" id="basis"></p>
+  </article>
+
+  <article class="card notes">
+    <h2>How this is worked out</h2>
+    <ul>
+      <li>"Right now" assumes the task starts this hour, using the latest IESO hour's intensity for the first hour and the forecast after that.</li>
+      <li>The best time is the run of consecutive hours, within the next 24, with the lowest average forecast intensity.</li>
+      <li>Energy is spread evenly over the run time. CO₂ = kWh in each hour × that hour's g CO₂e/kWh.</li>
+      <li>The driving comparison uses about 190 g CO₂ per km for an average gasoline car (a rough assumption, for scale only).</li>
+    </ul>
+  </article>
+</main>
+
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+<script src="charts.js"></script>
+<script src="calculator.js"></script>
+</body>
+</html>

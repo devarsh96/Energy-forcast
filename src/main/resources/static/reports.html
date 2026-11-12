@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clean Hour Reports</title>
+<meta name="description" content="Monthly carbon reports, raw hourly IESO data with Excel download, data sources and a public API.">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="./">Clean Hour</a>
+  <a href="./">Dashboard</a>
+  <a href="calculator.html">Carbon Calculator</a>
+  <a href="reports.html" aria-current="page">Reports</a>
+</nav>
+<header class="top">
+  <div>
+    <h1>Reports</h1>
+    <p class="sub">Monthly summaries, the raw hourly data behind the dashboard, where it comes from, and an open API.</p>
+  </div>
+  <div class="updated" id="coverage"></div>
+</header>
+
+<main>
+  <article class="card">
+    <h2>Monthly reports</h2>
+    <p class="basis" style="margin-top:0">Carbon, gas-led hours and the best times of day for each month. Each report can be downloaded as a PDF.</p>
+    <div class="month-list" id="months"><span class="muted">Loading…</span></div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Hourly data</h2>
+      <a class="btn primary" id="xlsx" href="#" download>Download Excel</a>
+    </div>
+    <form class="filters" id="filters">
+      <label class="field">From<input type="date" id="from" required></label>
+      <label class="field">To<input type="date" id="to" required></label>
+      <fieldset class="field" style="border:0;padding:0;margin:0">
+        <legend style="font-size:12px;color:var(--muted);margin-bottom:4px">Fuel columns</legend>
+        <div class="checks" id="fuels"></div>
+      </fieldset>
+      <button class="btn" type="submit">Apply</button>
+    </form>
+    <div class="table-wrap"><table class="data" id="table"><thead></thead><tbody></tbody></table></div>
+    <div class="pager">
+      <span id="count"></span>
+      <span>
+        <button class="btn small" type="button" id="prev">Previous</button>
+        <span id="page" style="margin:0 8px"></span>
+        <button class="btn small" type="button" id="next">Next</button>
+      </span>
+    </div>
+    <p class="basis">Times are Toronto local, by the start of the hour. Output is the hourly average in MW (equal to MWh for the hour). Intensity and emissions count only fuels with an emission factor. Select any column header to sort. Up to 100 days at a time.</p>
+  </article>
+
+  <article class="card">
+    <h2>Data sources</h2>
+    <div class="sources" id="sources"></div>
+    <p class="basis">All data comes from the IESO public reports site. Emission factors: IPCC AR5 Working Group III (2014), Annex III, lifecycle median values.</p>
+  </article>
+
+  <article class="card" id="api">
+    <h2>Public API</h2>
+    <p class="basis" style="margin-top:0">Read-only JSON, no key needed, open to other sites (CORS). Dates are Toronto local, in <code>YYYY-MM-DD</code> form. Data is served from this app's cache and refreshes every 5 minutes.</p>
+    <div id="endpoints"></div>
+  </article>
+</main>
+
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+<script src="charts.js"></script>
+<script src="reports.js"></script>
+</body>
+</html>

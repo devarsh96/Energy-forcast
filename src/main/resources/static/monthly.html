@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monthly Carbon Report</title>
+<meta name="description" content="Monthly summary of Ontario grid carbon intensity, gas-led hours and the best times to use electricity.">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="./">Clean Hour</a>
+  <a href="./">Dashboard</a>
+  <a href="calculator.html">Carbon Calculator</a>
+  <a href="reports.html" aria-current="page">Reports</a>
+</nav>
+<header class="top report-head">
+  <div>
+    <p class="sub" style="margin:0 0 4px"><a href="reports.html" class="no-print" style="color:var(--ink-2)">← Reports</a></p>
+    <h1 id="title">Monthly carbon report</h1>
+    <p class="sub" id="subtitle">Ontario electricity grid, from IESO public data.</p>
+  </div>
+  <div class="no-print" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap">
+    <label class="field">Month<select id="month"></select></label>
+    <button class="btn primary" type="button" id="pdf">Download PDF</button>
+  </div>
+</header>
+
+<main id="report">
+  <article class="card">
+    <div class="tiles" id="tiles"></div>
+    <div class="prose" id="summary" style="margin-top:14px"></div>
+  </article>
+
+  <article class="card">
+    <h2>Average carbon intensity by day</h2>
+    <div class="chart" id="daily-chart"></div>
+    <p class="basis" id="daily-note"></p>
+  </article>
+
+  <section class="grid-2">
+    <article class="card">
+      <h2>Best and worst times of day (monthly average)</h2>
+      <div class="chart" id="hour-chart"></div>
+      <ul class="legend">
+        <li><span class="sw sw-forecast"></span>Average for that hour</li>
+        <li><span class="sw sw-best"></span>Cleanest 3-hour block</li>
+        <li><span class="sw" style="background:var(--f-gas)"></span>Dirtiest 3-hour block</li>
+      </ul>
+    </article>
+    <article class="card">
+      <h2>Average by day of the week</h2>
+      <div class="chart" id="weekday-chart"></div>
+      <p class="basis" id="weekday-note"></p>
+    </article>
+  </section>
+
+  <section class="grid-2-1">
+    <article class="card">
+      <h2>Highlights</h2>
+      <table class="factors" id="highlights" style="width:100%"><tbody></tbody></table>
+      <p class="basis" id="gas-rule"></p>
+    </article>
+    <article class="card">
+      <h2>Fuel shares</h2>
+      <div class="donut" id="donut"></div>
+      <ul class="legend" id="donut-legend"></ul>
+    </article>
+  </section>
+
+  <article class="card notes">
+    <h2>About this report</h2>
+    <ul>
+      <li>Built from IESO's hourly generator output by fuel for Ontario transmission-connected generators. Imports, exports and embedded generation are not included.</li>
+      <li>Intensity uses IPCC AR5 lifecycle median emission factors (g CO₂e/kWh): nuclear 12, gas 490, hydro 24, wind 11, solar 48, biofuel 230. Storage is not counted.</li>
+      <li>Times are Toronto local time. A month in progress covers the hours reported so far.</li>
+    </ul>
+    <p class="basis" id="generated"></p>
+  </article>
+</main>
+
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+<script src="charts.js"></script>
+<script src="monthly.js"></script>
+</body>
+</html>

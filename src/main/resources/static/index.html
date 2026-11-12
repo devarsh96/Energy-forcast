@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clean Hour Ontario</title>
+<meta name="description" content="Live carbon intensity of Ontario's electricity grid, built from IESO generator output.">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="pages.css">
+</head>
+<body>
+<nav class="nav" aria-label="Main">
+  <a class="brand" href="./">Clean Hour</a>
+  <a href="./" aria-current="page">Dashboard</a>
+  <a href="calculator.html">Carbon Calculator</a>
+  <a href="reports.html">Reports</a>
+</nav>
+<header class="top">
+  <div>
+    <h1>Clean Hour <span class="muted">Ontario</span></h1>
+    <p class="sub">How much CO₂ is behind each kWh on Ontario's grid, from IESO generator output.</p>
+  </div>
+  <div class="updated" id="updated">Loading IESO data…</div>
+</header>
+
+<main id="app" aria-busy="true">
+  <section class="grid-top">
+    <article class="card" id="gauge-card">
+      <h2>Carbon intensity right now</h2>
+      <div class="gauge-wrap">
+        <svg id="gauge" viewBox="0 0 240 150" role="img" aria-label="Carbon intensity gauge"></svg>
+        <div class="gauge-readout">
+          <div class="hero" id="now-value">–</div>
+          <div class="unit">g CO₂e / kWh</div>
+          <div class="chip" id="now-band"></div>
+        </div>
+      </div>
+      <dl class="stats" id="now-stats"></dl>
+      <p class="hourlabel" id="now-hour"></p>
+    </article>
+
+    <article class="card" id="gas-card">
+      <h2>Who is setting the pace?</h2>
+      <div class="pace" id="pace">
+        <div class="pace-icon" id="pace-icon" aria-hidden="true"></div>
+        <div>
+          <div class="pace-head" id="pace-head">–</div>
+          <p class="pace-detail" id="pace-detail"></p>
+        </div>
+      </div>
+      <div class="meter" aria-hidden="true">
+        <div class="meter-track"><div class="meter-fill" id="pace-fill"></div></div>
+        <div class="meter-scale"><span>This week's low</span><span>This week's high</span></div>
+      </div>
+      <h3>Fuel mix this hour</h3>
+      <div class="mixbar" id="mixbar" role="img" aria-label="Fuel mix"></div>
+      <ul class="legend" id="mixlegend"></ul>
+    </article>
+
+    <article class="card ev" id="ev-card">
+      <h2>Best 3 hours to charge your EV</h2>
+      <div class="ev-window" id="ev-window">–</div>
+      <div class="ev-day" id="ev-day"></div>
+      <div class="ev-compare" id="ev-compare"></div>
+      <p class="basis" id="ev-basis"></p>
+    </article>
+  </section>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Last 24 hours and the next 24</h2>
+      <ul class="legend inline">
+        <li><span class="sw sw-actual"></span>Actual</li>
+        <li><span class="sw sw-forecast"></span>Forecast</li>
+        <li><span class="sw sw-best"></span>Best charging window</li>
+      </ul>
+    </div>
+    <div class="chart" id="timeline"></div>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Carbon intensity: actual vs. IESO's day-ahead forecast</h2>
+      <ul class="legend inline" id="fva-legend"></ul>
+    </div>
+    <div class="chart" id="fva-chart"></div>
+    <div class="kpis" id="fva-kpis"></div>
+    <p class="basis">Where the forecast comes from: every day IESO publishes an Adequacy report with the output it schedules for each fuel, hour by hour. The app saves the last version published before each day starts and converts it to g CO₂e/kWh with the same emission factors as the actual data.</p>
+  </article>
+
+  <section class="grid-2-1">
+    <article class="card">
+      <div class="card-head">
+        <h2>Fuel mix</h2>
+        <div class="seg" role="group" aria-label="Fuel mix range">
+          <button type="button" data-range="24h" aria-pressed="true">24 hours</button>
+          <button type="button" data-range="7d" aria-pressed="false">7 days</button>
+        </div>
+      </div>
+      <div class="chart" id="mix-chart"></div>
+      <ul class="legend" id="mix-area-legend"></ul>
+    </article>
+    <article class="card">
+      <h2 id="donut-title">Today's fuel shares</h2>
+      <div class="donut" id="donut"></div>
+      <ul class="legend" id="donut-legend"></ul>
+    </article>
+  </section>
+
+  <section class="grid-2">
+    <article class="card">
+      <h2>Today, hour by hour</h2>
+      <div class="chart" id="today-chart"></div>
+      <p class="basis" id="today-summary"></p>
+    </article>
+    <article class="card">
+      <h2>Last 7 days, by day</h2>
+      <div class="chart" id="week-chart"></div>
+      <p class="basis" id="week-summary"></p>
+    </article>
+  </section>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Demand vs. gas output, last 7 days</h2>
+      <ul class="legend inline" id="dg-legend"></ul>
+    </div>
+    <div class="chart" id="dg-chart"></div>
+    <p class="basis" id="dg-summary"></p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Cleanest and dirtiest hours, last 7 days</h2>
+      <div class="ramp-legend" id="ramp-legend"></div>
+    </div>
+    <div class="heatmap-scroll"><div class="heatmap" id="heatmap" role="grid" aria-label="Hourly carbon intensity heatmap"></div></div>
+    <p class="basis" id="heat-summary"></p>
+  </article>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Daily carbon intensity, past 3 months</h2>
+      <div class="ramp-legend" id="cal-legend"></div>
+    </div>
+    <div class="calendar-scroll"><div class="calendar" id="calendar"></div></div>
+    <p class="basis" id="cal-summary"></p>
+  </article>
+
+  <article class="card notes">
+    <h2>How this is calculated</h2>
+    <table class="factors" id="factors"><thead><tr><th>Fuel</th><th>g CO₂e/kWh</th></tr></thead><tbody></tbody></table>
+    <ul id="notes"></ul>
+    <p class="basis">Emission factors: IPCC AR5 Working Group III (2014), Annex III, lifecycle median values. Data: IESO public reports (GenOutputCapability, Adequacy3).</p>
+  </article>
+</main>
+
+<div class="tooltip" id="tooltip" role="status" hidden></div>
+<script src="charts.js"></script>
+<script src="dashboard-extra.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
