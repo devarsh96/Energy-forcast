@@ -16,8 +16,15 @@ public record Dashboard(
         EvWindow evWindow,
         Charts charts,
         Map<String, Double> emissionFactors,
-        List<String> notes
+        List<String> notes,
+        Freshness freshness
 ) {
+    /**
+     * How current the data is. {@code dataThrough} is the end of the latest actual hour;
+     * {@code stale} is true when that is more than 3 hours ago (IESO or this app's fetch is behind).
+     */
+    public record Freshness(Instant dataThrough, double ageHours, boolean stale) {}
+
     /** One hour of grid data. {@code start} is the start of the hour (UTC instant). */
     public record HourPoint(Instant start, double intensity, String band, double totalMw, double gasMw,
                             String source) {}
@@ -28,7 +35,7 @@ public record Dashboard(
                           List<FuelShare> mix, Double changeVsPrevHour, Double avg24h,
                           Double min24h, Double max24h) {}
 
-    /** "Is gas setting the pace?" A rule-based read of how much flexible gas is running and where it is heading. */
+    /** Gas level now: low, moderate or high, from its share of supply and where it sits in this week's range. */
     public record GasPace(String level, String headline, String detail, double gasMw, double gasShare,
                           double gasBaselineMw, double gasPeakMw, double flexibleRatio, Double gasChangeMw) {}
 
@@ -37,8 +44,8 @@ public record Dashboard(
 
     public record EvWindow(Instant start, Instant end, double avgIntensity, String band,
                            double nowIntensity, Double worstAvgIntensity, Instant worstStart,
-                           double savingVsNowPct, double kgCo2For40KwhBest, double kgCo2For40KwhNow,
-                           String basis) {}
+                           double savingVsNowPct, double chargeKwh, double chargerKw,
+                           double kgCo2Best, double kgCo2Now, String basis) {}
 
     // ---- extra charts
 

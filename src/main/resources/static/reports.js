@@ -59,6 +59,7 @@
         { key: "intensity", label: "g CO₂e/kWh", get: (r) => r.intensity, show: (r) => num(r.intensity) },
         { key: "dayAheadIntensity", label: "Day-ahead g/kWh", get: (r) => r.dayAheadIntensity, show: (r) => num(r.dayAheadIntensity) },
         { key: "tonnesCo2", label: "t CO₂e", get: (r) => r.tonnesCo2, show: (r) => num(r.tonnesCo2) },
+        { key: "gridPrice", label: "Grid $/MWh", get: (r) => r.gridPrice, show: (r) => num(r.gridPrice) },
       ];
       rows = d.rows;
       page = 0;
@@ -116,7 +117,7 @@
       };
       $("sources").innerHTML = s.sources.map((x) =>
         `<div class="source"><h3>${x.title}</h3><p>${x.usedFor}</p>` +
-        `<p class="meta">Last fetched: ${ago(x.lastUpdated)}<br>${x.refresh}</p>` +
+        `<p class="meta">${x.id === "OEB-RPP" ? "From the app's configuration" : "Last fetched: " + ago(x.lastUpdated)}<br>${x.refresh}</p>` +
         `<p class="meta"><a href="${x.url}" target="_blank" rel="noopener">${x.url.replace("https://", "")}</a></p></div>`).join("");
       const c = s.coverage;
       if (c.first) {
@@ -140,6 +141,8 @@
       ["/daily?from=&to=", "Totals per day: hours, tonnes CO₂e, MWh and average intensity.", "/daily?from=2026-10-01&to=2026-10-31"],
       ["/monthly/{YYYY-MM}", "The monthly report as JSON.", "/monthly/2026-10"],
       ["/months", "Months that have data.", "/months"],
+      ["/prices", "Household rate plans (ULO, TOU, Tiered) with the price now, the next 24 hours of plan prices, grid price and carbon, and grid price history.", "/prices"],
+      ["/charge-plan?kwh=&kw=&plan=&readyBy=&overTier=", "EV charge planner: cheapest, cleanest and balanced start times plus starting now, and the cheapest cost on each plan. <code>plan</code> is ULO, TOU or TIERED; <code>readyBy</code> is an ISO time (optional).", "/charge-plan?kwh=33&kw=7.2&plan=ULO"],
       ["/sources", "Data sources, when each was last fetched, history coverage and emission factors.", "/sources"],
     ];
     $("endpoints").innerHTML = eps.map(([path, desc, ex]) =>

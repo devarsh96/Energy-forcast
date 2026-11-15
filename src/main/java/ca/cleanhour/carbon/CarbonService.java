@@ -25,7 +25,12 @@ public class CarbonService {
 
     public static final ZoneId LOCAL = ZoneId.of("America/Toronto");
     static final int EV_WINDOW_HOURS = 3;
-    static final double EV_CHARGE_KWH = 40;
+    /** Typical home Level 2 charger (same default as the Savings Calculator's planner). */
+    public static final double EV_CHARGER_KW = 7.2;
+    /** Energy that charger adds in the 3-hour window. */
+    public static final double EV_CHARGE_KWH = EV_WINDOW_HOURS * EV_CHARGER_KW;
+    /** Latest actual hour older than this is flagged as stale on the page and in the API. */
+    static final Duration STALE_AFTER = Duration.ofHours(3);
 
     private final HourlyStore store;
     private final CarbonCalculator calc;
@@ -85,16 +90,20 @@ public class CarbonService {
                 prev == null ? null : round(cur.intensity() - prev.intensity()),
                 round(s24.getAverage()), round(s24.getMin()), round(s24.getMax()));
 
-        List<HourPoint> fc = forecast(actuals, cur, latestSchedule);
+        List<HourPoint> fc = forecast(actuals, cur, latestSchedule, now);
         this.forecast = fc;
         GasPace gas = gasPace(actuals, cur, prev, fc);
 
         Map<String, Double> factors = new LinkedHashMap<>();
         calc.factors().forEach((f, v) -> factors.put(f.name(), v));
 
+        Instant dataEnd = cur.start().plus(Duration.ofHours(1));
+        Duration age = Duration.between(dataEnd, now);
+        Freshness fresh = new Freshness(dataEnd, round(Math.max(0, age.toMinutes()) / 60.0), age.compareTo(STALE_AFTER) > 0);
+
         return new Dashboard(now, current, gas,
                 last24.stream().map(h -> point(h, "actual")).toList(),
-                heatmap(actuals), fc, evWindow(fc, cur), charts(now, rows, actuals, cur), factors, notes());
+                heatmap(actuals), fc, evWindow(fc, cur), charts(now, rows, actuals, cur), factors, notes(), fresh);
     }
 
     /** The latest forward forecast (next 24 hours), shared with the calculator API. */
@@ -120,15 +129,25 @@ public class CarbonService {
     }
 
     private List<HeatmapDay> heatmap(List<Hour> actuals) {
-        TreeMap<LocalDate, Double[]> days = new TreeMap<>();
+        // Sum and count per local hour: on the November clock change 1 am happens twice and is averaged.
+        TreeMap<LocalDate, double[][]> days = new TreeMap<>();
         for (Hour h : actuals) {
             ZonedDateTime local = h.start().atZone(LOCAL);
-            days.computeIfAbsent(local.toLocalDate(), d -> new Double[24])[local.getHour()] = round(h.intensity());
+            double[][] d = days.computeIfAbsent(local.toLocalDate(), k -> new double[2][24]);
+            d[0][local.getHour()] += h.intensity();
+            d[1][local.getHour()]++;
         }
         while (days.size() > historyDays) days.pollFirstEntry();
         return days.entrySet().stream()
-                .map(e -> new HeatmapDay(e.getKey(), Arrays.asList(e.getValue())))
+                .map(e -> new HeatmapDay(e.getKey(), localHourAverages(e.getValue())))
                 .toList();
+    }
+
+    /** {sums, counts} by local hour to 24 rounded averages (null where there is no data). */
+    public static List<Double> localHourAverages(double[][] sumsAndCounts) {
+        List<Double> out = new ArrayList<>(24);
+        for (int i = 0; i < 24; i++) out.add(sumsAndCounts[1][i] == 0 ? null : round(sumsAndCounts[0][i] / sumsAndCounts[1][i]));
+        return out;
     }
 
     /**
@@ -136,7 +155,7 @@ public class CarbonService {
      * average gap between actual and scheduled intensity. Falls back to the average of the same hour
      * over the recent history.
      */
-    private List<HourPoint> forecast(List<Hour> actuals, Hour cur, Map<Instant, EnumMap<Fuel, Double>> latestSchedule) {
+    List<HourPoint> forecast(List<Hour> actuals, Hour cur, Map<Instant, EnumMap<Fuel, Double>> latestSchedule, Instant now) {
         Map<Instant, Double> schedIntensity = new HashMap<>();
         latestSchedule.forEach((t, mix) -> { if (calc.complete(mix)) schedIntensity.put(t, calc.intensity(mix)); });
 
@@ -152,9 +171,14 @@ public class CarbonService {
             gasByHour.computeIfAbsent(a.hourEnding(), k -> new DoubleSummaryStatistics()).accept(a.gas());
         }
 
+        // IESO publishes actuals about an hour late, so the hour after the latest actual can already be under way
+        // (or long past, if the data is stale). Start at the current clock hour at the earliest.
+        Instant first = cur.start().plus(Duration.ofHours(1));
+        Instant nowHour = now.truncatedTo(java.time.temporal.ChronoUnit.HOURS);
+        if (first.isBefore(nowHour)) first = nowHour;
         List<HourPoint> out = new ArrayList<>();
-        for (int k = 1; k <= 24; k++) {
-            Instant start = cur.start().plus(Duration.ofHours(k));
+        for (int k = 0; k < 24; k++) {
+            Instant start = first.plus(Duration.ofHours(k));
             EnumMap<Fuel, Double> sched = latestSchedule.get(start);
             if (sched != null && calc.complete(sched)) {
                 double v = Math.max(0, calc.intensity(sched) + bias);
@@ -182,34 +206,33 @@ public class CarbonService {
         Double change = prev == null ? null : g - prev.gas();
         double total = calc.countedMw(cur.mix());
         double share = total > 0 ? g / total : 0;
-        boolean rising = change != null && change >= 150;
         double nextGas = forecast.isEmpty() ? g : forecast.get(0).gasMw();
 
-        String level, headline, detail;
-        double flexible = Math.max(0, g - base);
-        String gasNow = String.format(Locale.ROOT, "Gas plants are producing %,.0f MW (%.0f%% of supply)", g, share * 100);
-        if (ratio >= 0.5 || (ratio >= 0.3 && rising)) {
-            level = "setting";
-            headline = "Gas is setting the pace right now";
-            detail = String.format(Locale.ROOT,
-                    "%s, about %,.0f MW above this week's low. Extra demand right now is most likely met by gas at ~%.0f g/kWh.",
-                    gasNow, flexible, calc.factors().getOrDefault(Fuel.GAS, 490.0));
-        } else if (ratio >= 0.2 || rising) {
-            level = "supporting";
-            headline = "Gas is in the mix, but not leading";
-            detail = String.format(Locale.ROOT,
-                    "%s, %,.0f MW above this week's low. Gas is filling some of the gap.", gasNow, flexible);
-        } else {
-            level = "clean";
-            headline = "Clean power is setting the pace";
-            detail = String.format(Locale.ROOT,
-                    "%s, close to this week's minimum. Nuclear, hydro and wind are covering most of the swing.", gasNow);
-        }
-        if (nextGas - g >= 300) detail += " Gas is scheduled to ramp up next hour.";
-        else if (g - nextGas >= 300) detail += " Gas is scheduled to ease off next hour.";
+        // Two tests, so gas is not flagged every afternoon just because it ramps daily:
+        // how much of supply it is (absolute) and where it sits in this week's range (relative).
+        String level = gasLevel(share, ratio);
+        double trendMw = Math.abs(nextGas - g) >= 300 ? nextGas - g : change == null ? 0 : change;
+        String trend = trendMw >= 150 ? "ramping up" : trendMw <= -150 ? "easing off" : "steady";
+        String headline = String.format(Locale.ROOT, "Gas %.0f%% of supply, %s", share * 100, trend);
+        String detail = String.format(Locale.ROOT,
+                "Gas plants are producing %,.0f MW (%.0f%% of supply). This week's range is %,.0f to %,.0f MW. %s",
+                g, share * 100, base, peak,
+                switch (level) {
+                    case "high" -> "That is high: extra demand now is met mostly by gas at about "
+                            + Math.round(calc.factors().getOrDefault(Fuel.GAS, 490.0)) + " g/kWh, so it is a good hour to wait.";
+                    case "moderate" -> "Gas is filling part of the gap.";
+                    default -> "Nuclear, hydro and wind are covering most of demand.";
+                });
 
         return new GasPace(level, headline, detail, round(g), round4(share), round(base), round(peak),
                 round4(ratio), change == null ? null : round(change));
+    }
+
+    /** low: under 15% of supply or near the week's low. high: over 30% of supply and in the top fifth of the week. */
+    static String gasLevel(double share, double weekRatio) {
+        if (share < 0.15 || weekRatio < 0.2) return "low";
+        if (share > 0.30 && weekRatio >= 0.8) return "high";
+        return "moderate";
     }
 
     /** Lowest-average window of {@code hours} consecutive forecast hours. Returns the start index or -1. */
@@ -248,6 +271,7 @@ public class CarbonService {
                 round(bestAvg), CarbonCalculator.band(bestAvg), round(now),
                 worstAvg == null ? null : round(worstAvg), worst < 0 ? null : fc.get(worst).start(),
                 now > 0 ? round((now - bestAvg) / now * 100) : 0,
+                EV_CHARGE_KWH, EV_CHARGER_KW,
                 round(bestAvg * EV_CHARGE_KWH / 1000), round(now * EV_CHARGE_KWH / 1000), basis);
     }
 

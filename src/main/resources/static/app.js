@@ -101,27 +101,15 @@
     $("now-hour").textContent = `Latest IESO hour: ${timeLabel(start)}–${timeLabel(end)} · ${n0.format(c.totalMw)} MW generated`;
   }
 
+  // One line in the carbon card: a coloured dot for the gas level, the share and the trend. Detail on hover.
   function renderGas(d) {
-    const g = d.gasPace;
-    $("pace").dataset.level = g.level;
-    $("pace-icon").textContent = g.level === "setting" ? "!" : g.level === "supporting" ? "~" : "✓";
-    $("pace-head").textContent = g.headline;
-    $("pace-detail").textContent = g.detail;
-    $("pace-fill").style.width = Math.round(g.flexibleRatio * 100) + "%";
-
-    const mix = [...d.current.mix].sort((a, b) => FUEL_ORDER.indexOf(a.fuel) - FUEL_ORDER.indexOf(b.fuel));
-    $("mixbar").innerHTML = mix.map((m) =>
-      `<span style="flex:${m.mw} 0 0;background:var(--f-${m.fuel.toLowerCase()})" data-fuel="${m.fuel}"></span>`).join("");
-    $("mixbar").setAttribute("aria-label", "Fuel mix: " + mix.map((m) => `${FUEL_NAME[m.fuel]} ${Math.round(m.share * 100)}%`).join(", "));
-    $("mixbar").querySelectorAll("span").forEach((el) => {
-      const m = mix.find((x) => x.fuel === el.dataset.fuel);
-      el.addEventListener("mousemove", (e) => showTip(e,
-        `<div class="tt-s">${FUEL_NAME[m.fuel]}</div><div class="tt-v">${n0.format(m.mw)} MW</div>` +
-        `<div class="tt-s">${n1.format(m.share * 100)}% of output${m.factor != null ? ` · ${m.factor} g/kWh` : " · not counted"}</div>`));
-      el.addEventListener("mouseleave", hideTip);
-    });
-    $("mixlegend").innerHTML = mix.map((m) =>
-      `<li><span class="sw" style="background:var(--f-${m.fuel.toLowerCase()})"></span>${FUEL_NAME[m.fuel]} <b>${Math.round(m.share * 100)}%</b></li>`).join("");
+    const g = d.gasPace, el = $("gas-flag");
+    const word = { low: "Low gas", moderate: "Moderate gas", high: "High gas" }[g.level] || "Gas";
+    el.dataset.level = g.level;
+    $("gas-text").innerHTML = `<b>${word}</b> · ${g.headline.replace(/^Gas /, "")}`;
+    el.setAttribute("aria-label", `${word}. ${g.headline}. ${g.detail}`);
+    el.onmousemove = (e) => showTip(e, `<div class="tt-v">${word}</div><div class="tt-s" style="max-width:260px;white-space:normal">${g.detail}</div>`);
+    el.onmouseleave = hideTip;
   }
 
   function renderEv(d) {
@@ -142,11 +130,12 @@
     const max = Math.max(...rows.map((r) => r.v), 1);
     let html = rows.map((r) =>
       `<div class="ev-row"><span>${r.label}</span><div class="bar${r.best ? " best" : ""}" style="width:${(r.v / max) * 100}%"></div><b>${n0.format(r.v)}</b></div>`).join("");
-    const kgBest = ev.kgCo2For40KwhBest, kgNow = ev.kgCo2For40KwhNow;
+    const kgBest = ev.kgCo2Best, kgNow = ev.kgCo2Now;
+    const charge = `${n1.format(ev.chargeKwh)} kWh charge (3 hours at ${n1.format(ev.chargerKw)} kW)`;
     if (ev.savingVsNowPct > 1) {
-      html += `<div class="ev-save">A 40 kWh charge then emits about <strong>${n1.format(kgBest)} kg CO₂e</strong>, versus ${n1.format(kgNow)} kg right now (${n0.format(ev.savingVsNowPct)}% less).</div>`;
+      html += `<div class="ev-save">A ${charge} then emits about <strong>${n1.format(kgBest)} kg CO₂e</strong>, versus ${n1.format(kgNow)} kg right now (${n0.format(ev.savingVsNowPct)}% less).</div>`;
     } else {
-      html += `<div class="ev-save">Now is about as clean as it gets today: a 40 kWh charge emits about <strong>${n1.format(kgNow)} kg CO₂e</strong>.</div>`;
+      html += `<div class="ev-save">Now is about as clean as it gets today: a ${charge} emits about <strong>${n1.format(kgNow)} kg CO₂e</strong>.</div>`;
     }
     $("ev-compare").innerHTML = html;
     $("ev-basis").textContent = "Forecast basis: " + ev.basis + ".";
@@ -286,7 +275,9 @@
       try { window.renderExtras(d); } catch (e) { console.error("extra charts", e); }
     }
     $("app").setAttribute("aria-busy", "false");
-    $("updated").textContent = `Updated ${timeLabel(new Date(d.generatedAt))} · refreshes every 5 min`;
+    const f = d.freshness;
+    $("updated").textContent = `Updated ${timeLabel(new Date(d.generatedAt))} · refreshes every 5 min` +
+      (f && f.stale ? ` · ⚠ Latest IESO data ends ${fmtDay.format(new Date(f.dataThrough))}, ${timeLabel(new Date(f.dataThrough))} (${n0.format(f.ageHours)} h ago), so "now" values may be out of date` : "");
   }
 
   async function load() {

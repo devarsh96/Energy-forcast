@@ -57,7 +57,8 @@ public class ApiController {
     @GetMapping("/current")
     public ResponseEntity<Object> current() {
         return carbon.dashboard().<ResponseEntity<Object>>map(d -> ok(Map.of(
-                "generatedAt", d.generatedAt(), "current", d.current(), "gasPace", d.gasPace()), 60))
+                "generatedAt", d.generatedAt(), "current", d.current(), "gasPace", d.gasPace(),
+                "freshness", d.freshness()), 60))
                 .orElseGet(ApiController::loading);
     }
 
@@ -67,6 +68,7 @@ public class ApiController {
         return carbon.dashboard().<ResponseEntity<Object>>map(d -> {
             Map<String, Object> m = new LinkedHashMap<>();
             m.put("generatedAt", d.generatedAt());
+            m.put("freshness", d.freshness());
             m.put("hours", d.forecast());
             m.put("bestWindow", d.evWindow());
             return ok(m, 60);

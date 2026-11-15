@@ -12,7 +12,7 @@
 <nav class="nav" aria-label="Main">
   <a class="brand" href="./">Clean Hour</a>
   <a href="./" aria-current="page">Dashboard</a>
-  <a href="calculator.html">Carbon Calculator</a>
+  <a href="calculator.html">Savings Calculator</a>
   <a href="reports.html">Reports</a>
 </nav>
 <header class="top">
@@ -36,25 +36,20 @@
         </div>
       </div>
       <dl class="stats" id="now-stats"></dl>
+      <div class="gas-flag" id="gas-flag" tabindex="0"><span class="gas-dot" aria-hidden="true"></span><span id="gas-text">–</span></div>
       <p class="hourlabel" id="now-hour"></p>
     </article>
 
-    <article class="card" id="gas-card">
-      <h2>Who is setting the pace?</h2>
-      <div class="pace" id="pace">
-        <div class="pace-icon" id="pace-icon" aria-hidden="true"></div>
-        <div>
-          <div class="pace-head" id="pace-head">–</div>
-          <p class="pace-detail" id="pace-detail"></p>
-        </div>
+    <article class="card" id="price-card">
+      <h2>Your price right now</h2>
+      <div class="price-now">
+        <div class="hero" id="plan-price">–</div>
+        <div class="unit" id="plan-unit">¢ per kWh</div>
+        <div class="chip" id="plan-period"></div>
       </div>
-      <div class="meter" aria-hidden="true">
-        <div class="meter-track"><div class="meter-fill" id="pace-fill"></div></div>
-        <div class="meter-scale"><span>This week's low</span><span>This week's high</span></div>
-      </div>
-      <h3>Fuel mix this hour</h3>
-      <div class="mixbar" id="mixbar" role="img" aria-label="Fuel mix"></div>
-      <ul class="legend" id="mixlegend"></ul>
+      <p class="price-next" id="plan-next"></p>
+      <p class="grid-line" id="grid-line"></p>
+      <p class="basis" id="plan-title"></p>
     </article>
 
     <article class="card ev" id="ev-card">
@@ -62,31 +57,50 @@
       <div class="ev-window" id="ev-window">–</div>
       <div class="ev-day" id="ev-day"></div>
       <div class="ev-compare" id="ev-compare"></div>
+      <div class="ev-cost" id="ev-cost"></div>
       <p class="basis" id="ev-basis"></p>
     </article>
   </section>
 
-  <article class="card">
+  <article class="card switchable" data-view="carbon">
     <div class="card-head">
-      <h2>Last 24 hours and the next 24</h2>
-      <ul class="legend inline">
+      <h2><span data-pane="carbon">Last 24 hours and the next 24</span><span data-pane="price" id="strip-title" hidden>Next 24 hours: your price, the grid price and carbon</span></h2>
+      <div class="seg" role="group" aria-label="24-hour chart view">
+          <button type="button" data-view="carbon" aria-pressed="true">Carbon</button>
+          <button type="button" data-view="price" aria-pressed="false">Price</button>
+        </div>
+    </div>
+    <div data-pane="carbon">
+      <ul class="legend inline pane-legend">
         <li><span class="sw sw-actual"></span>Actual</li>
         <li><span class="sw sw-forecast"></span>Forecast</li>
         <li><span class="sw sw-best"></span>Best charging window</li>
       </ul>
+      <div class="chart" id="timeline"></div>
     </div>
-    <div class="chart" id="timeline"></div>
+    <div data-pane="price" hidden>
+      <ul class="legend inline pane-legend" id="strip-legend"></ul>
+      <div class="chart" id="strip"></div>
+      <p class="basis" id="strip-basis"></p>
+    </div>
   </article>
 
-  <article class="card">
-    <div class="card-head">
-      <h2>Carbon intensity: actual vs. IESO's day-ahead forecast</h2>
-      <ul class="legend inline" id="fva-legend"></ul>
-    </div>
-    <div class="chart" id="fva-chart"></div>
-    <div class="kpis" id="fva-kpis"></div>
-    <p class="basis">Where the forecast comes from: every day IESO publishes an Adequacy report with the output it schedules for each fuel, hour by hour. The app saves the last version published before each day starts and converts it to g CO₂e/kWh with the same emission factors as the actual data.</p>
-  </article>
+  <section class="grid-2">
+    <article class="card">
+      <h2>Which plan suits your charging?</h2>
+      <div class="plans-wrap"><table class="data plans" id="plan-table">
+        <thead><tr><th>Plan</th><th>Per charge</th><th>Per month</th><th>vs. best</th></tr></thead>
+        <tbody></tbody>
+      </table></div>
+      <p class="basis" id="plan-table-note"></p>
+    </article>
+    <article class="card">
+      <h2>Rate periods</h2>
+      <div id="periods"></div>
+      <p class="basis" id="rates-effective"></p>
+    </article>
+  </section>
+
 
   <section class="grid-2-1">
     <article class="card">
@@ -106,6 +120,16 @@
       <ul class="legend" id="donut-legend"></ul>
     </article>
   </section>
+
+  <article class="card">
+    <div class="card-head">
+      <h2>Carbon intensity: actual vs. IESO's day-ahead forecast</h2>
+      <ul class="legend inline" id="fva-legend"></ul>
+    </div>
+    <div class="chart" id="fva-chart"></div>
+    <div class="kpis" id="fva-kpis"></div>
+    <p class="basis">Where the forecast comes from: every day IESO publishes an Adequacy report with the output it schedules for each fuel, hour by hour. The app saves the last version published before each day starts and converts it to g CO₂e/kWh with the same emission factors as the actual data.</p>
+  </article>
 
   <section class="grid-2">
     <article class="card">
@@ -129,29 +153,58 @@
     <p class="basis" id="dg-summary"></p>
   </article>
 
-  <article class="card">
+  <article class="card switchable" data-view="carbon">
     <div class="card-head">
-      <h2>Cleanest and dirtiest hours, last 7 days</h2>
-      <div class="ramp-legend" id="ramp-legend"></div>
+      <h2><span data-pane="carbon">Cleanest and dirtiest hours, last 7 days</span><span data-pane="price" hidden>Cheapest and dearest hours, last 7 days</span></h2>
+      <div class="seg" role="group" aria-label="Heatmap view">
+          <button type="button" data-view="carbon" aria-pressed="true">Carbon</button>
+          <button type="button" data-view="price" aria-pressed="false">Price</button>
+        </div>
     </div>
-    <div class="heatmap-scroll"><div class="heatmap" id="heatmap" role="grid" aria-label="Hourly carbon intensity heatmap"></div></div>
-    <p class="basis" id="heat-summary"></p>
+    <div data-pane="carbon">
+      <div class="ramp-legend pane-legend" id="ramp-legend"></div>
+      <div class="heatmap-scroll"><div class="heatmap" id="heatmap" role="grid" aria-label="Hourly carbon intensity heatmap"></div></div>
+      <p class="basis" id="heat-summary"></p>
+    </div>
+    <div data-pane="price" hidden>
+      <div class="ramp-legend pane-legend" id="price-heat-legend"></div>
+      <div class="heatmap-scroll"><div class="heatmap" id="price-heatmap" role="grid" aria-label="Hourly grid price heatmap"></div></div>
+      <p class="basis" id="price-heat-summary"></p>
+    </div>
   </article>
 
-  <article class="card">
+  <article class="card switchable" data-view="carbon">
     <div class="card-head">
-      <h2>Daily carbon intensity, past 3 months</h2>
-      <div class="ramp-legend" id="cal-legend"></div>
+      <h2><span data-pane="carbon">Daily carbon intensity, past 3 months</span><span data-pane="price" hidden>Daily average grid price, past 3 months</span></h2>
+      <div class="seg" role="group" aria-label="Calendar view">
+          <button type="button" data-view="carbon" aria-pressed="true">Carbon</button>
+          <button type="button" data-view="price" aria-pressed="false">Price</button>
+        </div>
     </div>
-    <div class="calendar-scroll"><div class="calendar" id="calendar"></div></div>
-    <p class="basis" id="cal-summary"></p>
+    <div data-pane="carbon">
+      <div class="ramp-legend pane-legend" id="cal-legend"></div>
+      <div class="calendar-scroll"><div class="calendar" id="calendar"></div></div>
+      <p class="basis" id="cal-summary"></p>
+    </div>
+    <div data-pane="price" hidden>
+      <div class="ramp-legend pane-legend" id="price-cal-legend"></div>
+      <div class="calendar-scroll"><div class="calendar" id="price-calendar"></div></div>
+      <p class="basis" id="price-cal-summary"></p>
+    </div>
   </article>
 
   <article class="card notes">
     <h2>How this is calculated</h2>
     <table class="factors" id="factors"><thead><tr><th>Fuel</th><th>g CO₂e/kWh</th></tr></thead><tbody></tbody></table>
     <ul id="notes"></ul>
-    <p class="basis">Emission factors: IPCC AR5 Working Group III (2014), Annex III, lifecycle median values. Data: IESO public reports (GenOutputCapability, Adequacy3).</p>
+    <h3>Prices</h3>
+    <ul id="price-notes"></ul>
+    <ul>
+      <li>The plan comparison and the "Cheapest charge" box use your EV settings from the Savings Calculator.</li>
+      <li>Cheapest = lowest cost. Cleanest = lowest kg CO₂e. Each charge starts at the top of an hour and runs at full charger power, allowing about 10% charging loss.</li>
+      <li>Full-bill estimate = (price + delivery) × (1 + HST − Ontario Electricity Rebate). Delivery charges vary by utility, so check your bill for your number.</li>
+    </ul>
+    <p class="basis">Emission factors: IPCC AR5 Working Group III (2014), Annex III, lifecycle median values. Data: IESO public reports (GenOutputCapability, Adequacy3, Ontario Zonal Price); OEB Regulated Price Plan prices.</p>
   </article>
 </main>
 
@@ -159,5 +212,7 @@
 <script src="charts.js"></script>
 <script src="dashboard-extra.js"></script>
 <script src="app.js"></script>
+<script src="pricing-common.js"></script>
+<script src="dashboard-pricing.js"></script>
 </body>
 </html>

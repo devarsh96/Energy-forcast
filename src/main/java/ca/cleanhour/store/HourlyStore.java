@@ -3,6 +3,8 @@ package ca.cleanhour.store;
 import ca.cleanhour.CleanHourProperties;
 import ca.cleanhour.ieso.DayReport;
 import ca.cleanhour.ieso.Fuel;
+import ca.cleanhour.ieso.PriceDay;
+import ca.cleanhour.ieso.RealtimePrice;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -34,6 +36,7 @@ public class HourlyStore {
     private final ConcurrentSkipListMap<Instant, HourRow> rows = new ConcurrentSkipListMap<>();
     private final Map<String, Instant> sourceUpdated = new ConcurrentHashMap<>();
     private final Set<LocalDate> dayAheadAttempted = ConcurrentHashMap.newKeySet();
+    private final Set<LocalDate> priceAttempted = ConcurrentHashMap.newKeySet();
     private final Path file;
     private final ObjectMapper mapper = new ObjectMapper()
             .registerModule(new JavaTimeModule())
@@ -50,6 +53,11 @@ public class HourlyStore {
         public List<HourRow> rows = new ArrayList<>();
         public Map<String, Instant> sourceUpdated = new HashMap<>();
         public Set<LocalDate> dayAheadAttempted = new HashSet<>();
+        /**
+         * Past days whose day-ahead price file IESO no longer has. Renamed from "priceAttempted", which
+         * could also hold days that only failed because of a network error; those old entries are dropped on load.
+         */
+        public Set<LocalDate> priceNotFound = new HashSet<>();
     }
 
     public static Instant startOf(LocalDate estDate, int hourEnding) {
@@ -64,6 +72,7 @@ public class HourlyStore {
             s.rows.forEach(r -> { if (r.start != null) rows.put(r.start, r); });
             sourceUpdated.putAll(s.sourceUpdated);
             dayAheadAttempted.addAll(s.dayAheadAttempted);
+            if (s.priceNotFound != null) priceAttempted.addAll(s.priceNotFound);
             log.info("Loaded {} stored hours from {}", rows.size(), file.toAbsolutePath());
         } catch (IOException e) {
             log.warn("Could not read {} ({}); starting empty", file, e.toString());
@@ -79,6 +88,7 @@ public class HourlyStore {
             s.rows = new ArrayList<>(rows.values());
             s.sourceUpdated = new HashMap<>(sourceUpdated);
             s.dayAheadAttempted = new HashSet<>(dayAheadAttempted);
+            s.priceNotFound = new HashSet<>(priceAttempted);
             Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
             mapper.writeValue(tmp.toFile(), s);
             Files.move(tmp, file, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
@@ -117,6 +127,35 @@ public class HourlyStore {
         dirty = true;
     }
 
+    public void putDayAheadPrice(PriceDay p) {
+        p.hours().forEach((he, v) -> row(startOf(p.date(), he)).priceDayAhead = v);
+        priceAttempted.add(p.date());
+        dirty = true;
+    }
+
+    public void putPredispatchPrice(PriceDay p) {
+        p.hours().forEach((he, v) -> row(startOf(p.date(), he)).pricePredispatch = v);
+        dirty = true;
+    }
+
+    /** Keeps the real-time average with the most intervals (a later file for the same hour never has fewer). */
+    public void putRealtimePrice(RealtimePrice p) {
+        HourRow r = row(startOf(p.date(), p.hourEnding()));
+        if (r.priceRealtimeIntervals != null && r.priceRealtimeIntervals > p.intervals()) return;
+        r.priceRealtime = p.average();
+        r.priceRealtimeIntervals = p.intervals();
+        dirty = true;
+    }
+
+    public boolean hasDayAheadPrice(LocalDate estDate) {
+        Instant from = startOf(estDate, 1);
+        return rows.subMap(from, true, from.plus(Duration.ofHours(24)), false).values().stream()
+                .filter(r -> r.priceDayAhead != null).count() >= 23;
+    }
+
+    public void markPriceAttempted(LocalDate d) { priceAttempted.add(d); dirty = true; }
+    public boolean priceAttempted(LocalDate d) { return priceAttempted.contains(d); }
+
     public void markDayAheadAttempted(LocalDate d) { dayAheadAttempted.add(d); dirty = true; }
     public boolean dayAheadAttempted(LocalDate d) { return dayAheadAttempted.contains(d); }
 
@@ -150,6 +189,7 @@ public class HourlyStore {
         rows.headMap(cutoff).clear();
         LocalDate d = cutoff.atOffset(EST).toLocalDate();
         dayAheadAttempted.removeIf(x -> x.isBefore(d));
+        priceAttempted.removeIf(x -> x.isBefore(d));
         dirty = true;
     }
 

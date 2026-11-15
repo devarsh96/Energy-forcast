@@ -46,3 +46,33 @@ cleanhour:
     WIND: 11
     SOLAR: 48
     BIOFUEL: 230
+
+  # Ontario Energy Board Regulated Price Plan, commodity prices in cents per kWh.
+  # Delivery, regulatory charges and HST are extra; the Ontario Electricity Rebate (OER) is a % credit.
+  # Add a new block every November 1. Older blocks keep the 3-month history priced correctly.
+  # Source: OEB / Hydro One published RPP prices.
+  pricing:
+    hst-pct: 13
+    rate-sets:
+      - effective: 2025-11-01
+        tou-off: 9.8
+        tou-mid: 15.7
+        tou-on: 20.3
+        ulo-overnight: 3.9
+        ulo-weekend-off: 9.8
+        ulo-mid: 15.7
+        ulo-on: 39.1
+        tier1: 12.0
+        tier2: 14.2
+        oer-pct: 23.5
+      - effective: 2026-11-01
+        tou-off: 9.1
+        tou-mid: 14.6
+        tou-on: 18.9
+        ulo-overnight: 3.7
+        ulo-weekend-off: 9.1
+        ulo-mid: 14.6
+        ulo-on: 37.7
+        tier1: 11.2
+        tier2: 13.2
+        oer-pct: 15.7

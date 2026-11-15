@@ -119,7 +119,50 @@
       slices: shares.map((s) => ({ v: s.mw, color: fuelColor(s.fuel), tip: `<div class="tt-s">${FUEL_NAME[s.fuel]}</div><div class="tt-v">${fmt.n1(s.share * 100)}%</div>` })),
     });
     $("donut-legend").innerHTML = shares.map((s) => `<li><span class="sw" style="background:${fuelColor(s.fuel)}"></span>${FUEL_NAME[s.fuel]} <b>${fmt.n1(s.share * 100)}%</b></li>`).join("");
+    renderPrices(r);
     $("generated").textContent = `Generated ${fmt.day(new Date())}, ${fmt.time(new Date())} by Clean Hour.`;
+  }
+
+  // ---------------------------------------------------------------- prices
+  const money = (v) => new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" }).format(v);
+  const c1 = (v) => new Intl.NumberFormat("en-CA", { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(v);
+  function renderPrices(r) {
+    const p = r.prices, card = $("price-card");
+    if (!p) { card.hidden = true; return; }
+    card.hidden = false;
+    const PLAN = { ULO: "Ultra-Low Overnight", TOU: "Time-of-Use", TIERED: "Tiered" };
+    const tiles = [];
+    if (p.hours > 0) {
+      tiles.push(["Average grid price", `${c1(p.avg)}¢`, `per kWh · ${fmt.n0(p.avg * 10)} $/MWh`]);
+      if (p.cheapest) tiles.push(["Cheapest hour", `${c1(p.cheapest.cents)}¢`, `${fmt.day(new Date(p.cheapest.start))}, ${fmt.time(new Date(p.cheapest.start))}`]);
+      if (p.dearest) tiles.push(["Dearest hour", `${c1(p.dearest.cents)}¢`, `${fmt.day(new Date(p.dearest.start))}, ${fmt.time(new Date(p.dearest.start))}`]);
+      tiles.push(["Gas-led vs other hours", `${c1(p.gasLedAvg)}¢`, `vs ${c1(p.otherAvg)}¢ when gas wasn't leading`]);
+    }
+    tiles.push(["Typical EV month on ULO", money(p.evCostBest.ULO), `${fmt.n0(p.evKwh)} kWh, charged overnight`]);
+    $("price-tiles").innerHTML = tiles.map(([k, v, s]) => `<div class="tile"><div class="k">${k}</div><div class="v">${v}</div><div class="s">${s}</div></div>`).join("");
+
+    if (p.hours > 0) {
+      const inBlock = (h, blk) => blk && [0, 1, 2].some((k) => (blk.startHour + k) % 24 === h);
+      CH.barChart($("price-hour-chart"), {
+        label: "Average grid price by hour of day",
+        bars: p.hourOfDay.map((v, h) => ({
+          label: hourName(h), v: v || 0,
+          color: inBlock(h, p.cheapestBlock) ? "var(--best)" : inBlock(h, p.dearestBlock) ? "var(--f-gas)" : "var(--forecast)",
+          tip: `<div class="tt-s">${hourName(h)}–${hourName((h + 1) % 24)}</div><div class="tt-v">${v == null ? "–" : c1(v)}¢/kWh</div>`,
+        })),
+        yFormat: (v) => fmt.n1(v),
+      });
+    } else {
+      $("price-hour-chart").innerHTML = `<p class="empty-note">No IESO grid prices stored for this month.</p>`;
+    }
+    $("ev-plans").querySelector("tbody").innerHTML = Object.keys(PLAN).map((k) =>
+      `<tr><td>${PLAN[k]}</td><td>${money(p.evCostBest[k])}</td><td>${money(p.evCostPeak[k])}</td></tr>`).join("");
+    $("ev-plans-note").textContent = `${fmt.n0(p.evKwh)} kWh a month (three 40 kWh charges a week), electricity price only, at OEB rates effective ${fmt.date(fmt.isoDay(p.rates.effective))}. "At peak" is the plan's highest price (tier 1 for Tiered).`;
+    const cb = p.cheapestBlock, db = p.dearestBlock;
+    $("price-summary").innerHTML = p.hours > 0 && cb && db
+      ? `<p>The wholesale grid price averaged <strong>${c1(p.avg)}¢/kWh</strong>. It was lowest on average from <strong>${hourName(cb.startHour)}–${hourName(cb.endHour)}</strong> (${c1(cb.intensity)}¢) and highest from ${hourName(db.startHour)}–${hourName(db.endHour)} (${c1(db.intensity)}¢). ` +
+        `In hours when gas was leading, the grid price averaged ${c1(p.gasLedAvg)}¢ against ${c1(p.otherAvg)}¢ otherwise. On the Ultra-Low Overnight plan, charging overnight instead of on-peak saves about <strong>${money(p.evCostPeak.ULO - p.evCostBest.ULO)}</strong> a month.</p>`
+      : "";
   }
 
   // ---------------------------------------------------------------- PDF

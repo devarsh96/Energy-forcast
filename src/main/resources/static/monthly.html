@@ -12,7 +12,7 @@
 <nav class="nav" aria-label="Main">
   <a class="brand" href="./">Clean Hour</a>
   <a href="./">Dashboard</a>
-  <a href="calculator.html">Carbon Calculator</a>
+  <a href="calculator.html">Savings Calculator</a>
   <a href="reports.html" aria-current="page">Reports</a>
 </nav>
 <header class="top report-head">
@@ -56,6 +56,23 @@
     </article>
   </section>
 
+  <article class="card" id="price-card">
+    <h2>Electricity prices and EV charging cost</h2>
+    <div class="tiles" id="price-tiles"></div>
+    <section class="grid-2" style="margin-top:14px">
+      <div>
+        <h3>Average grid price by hour of day</h3>
+        <div class="chart" id="price-hour-chart"></div>
+      </div>
+      <div>
+        <h3>A typical EV month on each plan</h3>
+        <table class="factors" id="ev-plans" style="width:100%"><thead><tr><th>Plan</th><th>Cheapest time</th><th>At peak</th></tr></thead><tbody></tbody></table>
+        <p class="basis" id="ev-plans-note"></p>
+      </div>
+    </section>
+    <div class="prose" id="price-summary" style="margin-top:10px"></div>
+  </article>
+
   <section class="grid-2-1">
     <article class="card">
       <h2>Highlights</h2>
@@ -82,6 +99,7 @@
 
 <div class="tooltip" id="tooltip" role="status" hidden></div>
 <script src="charts.js"></script>
+<script src="pricing-common.js"></script>
 <script src="monthly.js"></script>
 </body>
 </html>

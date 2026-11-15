@@ -105,27 +105,18 @@ main { max-width: 1200px; margin: 0 auto; padding: 8px 16px 40px; display: grid;
 .stats dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 .hourlabel { color: var(--muted); font-size: 12px; text-align: center; margin: 10px 0 0; }
 
-/* Gas pace */
-.pace { display: flex; gap: 12px; align-items: flex-start; }
-.pace-icon {
-  flex: none; width: 36px; height: 36px; border-radius: 50%;
-  display: grid; place-items: center; font-weight: 700; font-size: 18px; color: #fff;
-  background: var(--muted);
+/* Gas level: one line in the carbon card, with a big coloured dot */
+.gas-flag {
+  display: flex; align-items: center; justify-content: center; gap: 10px;
+  margin: 14px 0 0; padding: 8px 10px; border-radius: 10px; background: var(--grid);
+  font-size: 14px; color: var(--ink-2); cursor: default;
 }
-.pace[data-level="setting"] .pace-icon { background: var(--critical); }
-.pace[data-level="supporting"] .pace-icon { background: var(--warning); color: #0b0b0b; }
-.pace[data-level="clean"] .pace-icon { background: var(--good); }
-.pace-head { font-size: 18px; font-weight: 650; }
-.pace-detail { margin: 4px 0 0; color: var(--ink-2); font-size: 14px; }
-.meter { margin-top: 14px; }
-.meter-track { height: 8px; border-radius: 4px; background: var(--grid); overflow: hidden; }
-.meter-fill { height: 100%; width: 0; border-radius: 4px; background: var(--f-gas); transition: width .4s; }
-.meter-scale { display: flex; justify-content: space-between; color: var(--muted); font-size: 12px; margin-top: 4px; }
+.gas-flag b { color: var(--ink); font-weight: 650; }
+.gas-dot { flex: none; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); }
+.gas-flag[data-level="low"] .gas-dot { background: var(--good); }
+.gas-flag[data-level="moderate"] .gas-dot { background: var(--warning); }
+.gas-flag[data-level="high"] .gas-dot { background: var(--critical); box-shadow: 0 0 0 4px color-mix(in srgb, var(--critical) 25%, transparent); }
 
-.mixbar { display: flex; gap: 2px; height: 16px; }
-.mixbar span { display: block; height: 100%; min-width: 2px; }
-.mixbar span:first-child { border-radius: 4px 0 0 4px; }
-.mixbar span:last-child { border-radius: 0 4px 4px 0; }
 .legend { list-style: none; padding: 0; margin: 10px 0 0; display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; color: var(--ink-2); }
 .legend.inline { margin: 0 0 8px; }
 .legend li { display: inline-flex; align-items: center; gap: 6px; }

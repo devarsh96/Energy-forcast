@@ -3,6 +3,9 @@ package ca.cleanhour.carbon;
 import ca.cleanhour.carbon.Dashboard.DayTotal;
 import ca.cleanhour.carbon.Dashboard.FuelShare;
 import ca.cleanhour.ieso.Fuel;
+import ca.cleanhour.pricing.RatePlan;
+import ca.cleanhour.pricing.RateSet;
+import ca.cleanhour.pricing.Tariff;
 import ca.cleanhour.store.HourRow;
 import ca.cleanhour.store.HourlyStore;
 import org.springframework.stereotype.Service;
@@ -22,20 +25,26 @@ public class ReportService {
     private final CarbonCalculator calc;
     private final CarbonService carbon;
     private final IngestService ingest;
+    private final Tariff tariff;
 
-    public ReportService(HourlyStore store, CarbonCalculator calc, CarbonService carbon, IngestService ingest) {
+    public ReportService(HourlyStore store, CarbonCalculator calc, CarbonService carbon, IngestService ingest, Tariff tariff) {
         this.store = store;
         this.calc = calc;
         this.carbon = carbon;
         this.ingest = ingest;
+        this.tariff = tariff;
     }
 
     // ---------------------------------------------------------------- raw hourly data
 
-    /** One row of the raw data table. Times are Toronto local. */
-    public record HourlyRecord(Instant start, String localTime, LocalDate date, int hour,
+    /**
+     * One row of the raw data table. Times are Toronto local; {@code zone} (EST or EDT) tells apart the two
+     * 1 am hours on the November clock change.
+     */
+    public record HourlyRecord(Instant start, String localTime, String zone, LocalDate date, int hour,
                                Map<String, Double> fuelMw, Double totalMw, Double demandMw,
-                               Double intensity, Double dayAheadIntensity, Double tonnesCo2) {}
+                               Double intensity, Double dayAheadIntensity, Double tonnesCo2,
+                               Double gridPrice) {}
 
     public List<HourlyRecord> hourly(LocalDate from, LocalDate to, Set<Fuel> fuels) {
         Instant a = from.atStartOfDay(LOCAL).toInstant();
@@ -49,11 +58,13 @@ public class ReportService {
                 if (fuels.contains(f)) mw.put(f.name(), round(r.actual.getOrDefault(f, 0.0)));
             }
             boolean ok = calc.complete(r.actual);
-            out.add(new HourlyRecord(r.start, local.toLocalDateTime().toString(), local.toLocalDate(), local.getHour(), mw,
+            String zone = local.getOffset().getTotalSeconds() == -4 * 3600 ? "EDT" : "EST";
+            out.add(new HourlyRecord(r.start, local.toLocalDateTime().toString(), zone, local.toLocalDate(), local.getHour(), mw,
                     round(CarbonService.totalMw(r.actual)), r.demand,
                     ok ? round(calc.intensity(r.actual)) : null,
                     calc.complete(r.dayAhead) ? round(calc.intensity(r.dayAhead)) : null,
-                    ok ? round(calc.emissionsTonnes(r.actual)) : null));
+                    ok ? round(calc.emissionsTonnes(r.actual)) : null,
+                    r.gridPrice() == null ? null : Math.round(r.gridPrice() * 100) / 100.0));
         }
         return out;
     }
@@ -95,7 +106,23 @@ public class ReportService {
                 new Source(IngestService.SRC_DEMAND, "Hourly Demand",
                         baseUrl + "/Demand/",
                         "Ontario demand per hour (MW), used for the demand vs. gas chart and the data table.",
-                        "Every 30 minutes", u.get(IngestService.SRC_DEMAND)));
+                        "Every 30 minutes", u.get(IngestService.SRC_DEMAND)),
+                new Source(IngestService.SRC_PRICE_RT, "Real-time Ontario Zonal Price (5-minute)",
+                        baseUrl + "/RealtimeOntarioZonalPrice/",
+                        "Wholesale price for each 5-minute interval of the current hour, averaged to an hourly grid price for the Dashboard and the data table.",
+                        "Every 5 minutes", u.get(IngestService.SRC_PRICE_RT)),
+                new Source(IngestService.SRC_PRICE_PD, "Pre-dispatch Hourly Ontario Zonal Price",
+                        baseUrl + "/PredispHourlyOntarioZonalPrice/",
+                        "IESO's latest forecast of the hourly grid price for the rest of today.",
+                        "Every 30 minutes", u.get(IngestService.SRC_PRICE_PD)),
+                new Source(IngestService.SRC_PRICE_DA, "Day-ahead Hourly Ontario Zonal Price",
+                        baseUrl + "/DAHourlyOntarioZonalPrice/",
+                        "Day-ahead market price for each hour: tomorrow's grid price once published (early afternoon), and the 3-month price history.",
+                        "Every 30 minutes; history backfill every 12 hours", u.get(IngestService.SRC_PRICE_DA)),
+                new Source("OEB-RPP", "OEB Regulated Price Plan prices",
+                        "https://www.oeb.ca/consumer-information-and-protection/electricity-rates",
+                        "Household Time-of-Use, Ultra-Low Overnight and Tiered prices. Set by the Ontario Energy Board each November; kept in the app's configuration.",
+                        "Rates effective " + tariff.ratesOn(LocalDate.now(LOCAL)).getEffective(), null));
     }
 
     // ---------------------------------------------------------------- monthly report
@@ -111,7 +138,20 @@ public class ReportService {
             int gasLedHours, double gasLedShare, double gasAvgMw, double gasShareOfOutput, String gasRule,
             List<Double> hourOfDay, Block bestBlock, Block worstBlock, List<WeekdayAvg> weekdays,
             List<FuelShare> fuelShares, List<DayTotal> daily,
-            Double forecastMeanAbsError, Integer forecastHours) {}
+            Double forecastMeanAbsError, Integer forecastHours,
+            PriceSummary prices) {}
+
+    /**
+     * Grid price for the month (cents per kWh, real-time where available, otherwise day-ahead) and
+     * what a typical EV month would cost on each household plan.
+     */
+    public record PriceSummary(int hours, double avg, HourPrice cheapest, HourPrice dearest,
+                               List<Double> hourOfDay, Block cheapestBlock, Block dearestBlock,
+                               double gasLedAvg, double otherAvg, double evKwh,
+                               Map<RatePlan, Double> evCostBest, Map<RatePlan, Double> evCostPeak,
+                               RateSet rates) {}
+
+    public record HourPrice(Instant start, double cents) {}
 
     public List<YearMonth> availableMonths() {
         Coverage c = coverage();
@@ -152,7 +192,7 @@ public class ReportService {
             if (calc.complete(r.dayAhead)) { fcAbs += Math.abs(calc.intensity(r.dayAhead) - v); fcN++; }
         }
 
-        // Gas-led hours: same idea as the live indicator, using this month's gas range.
+        // Gas-led hours: gas in the upper part of this month's own range.
         double[] sorted = gas.clone();
         Arrays.sort(sorted);
         double lo = CarbonService.percentile(sorted, 0.10), hi = CarbonService.percentile(sorted, 0.90);
@@ -191,8 +231,45 @@ public class ReportService {
                 counted > 0 ? CarbonService.round4(mix.getOrDefault(Fuel.GAS, 0.0) / counted) : 0,
                 String.format(Locale.ROOT, "Hours when gas output was at least %,.0f MW (halfway between this month's typical low of %,.0f MW and high of %,.0f MW)", threshold, lo, hi),
                 profile, best, worst, weekdays, carbon.shares(mix), daily,
-                fcN == 0 ? null : round(fcAbs / fcN), fcN == 0 ? null : fcN));
+                fcN == 0 ? null : round(fcAbs / fcN), fcN == 0 ? null : fcN,
+                priceSummary(month, rows, threshold)));
     }
+
+    /** Typical EV month: 3 charges of 40 kWh a week. */
+    static final double EV_MONTH_KWH = 40 * 3 * 52 / 12.0;
+
+    private PriceSummary priceSummary(YearMonth month, List<HourRow> rows, double gasThreshold) {
+        double sum = 0, gasSum = 0, otherSum = 0;
+        int n = 0, gasN = 0, otherN = 0;
+        double[] hourSum = new double[24];
+        int[] hourN = new int[24];
+        HourPrice lo = null, hi = null;
+        for (HourRow r : rows) {
+            Double p = r.gridPrice();
+            if (p == null) continue;
+            double c = p / 10;
+            sum += c; n++;
+            int h = r.start.atZone(LOCAL).getHour();
+            hourSum[h] += c; hourN[h]++;
+            if (r.actual.getOrDefault(Fuel.GAS, 0.0) >= gasThreshold) { gasSum += c; gasN++; } else { otherSum += c; otherN++; }
+            if (lo == null || c < lo.cents()) lo = new HourPrice(r.start, round2(c));
+            if (hi == null || c > hi.cents()) hi = new HourPrice(r.start, round2(c));
+        }
+        RateSet rates = tariff.ratesOn(month.atEndOfMonth().isAfter(LocalDate.now(LOCAL)) ? LocalDate.now(LOCAL) : month.atEndOfMonth());
+        Map<RatePlan, Double> best = new EnumMap<>(RatePlan.class), peak = new EnumMap<>(RatePlan.class);
+        for (RatePlan pl : RatePlan.values()) {
+            best.put(pl, round2(EV_MONTH_KWH * rates.lowest(pl) / 100));
+            peak.put(pl, round2(EV_MONTH_KWH * (pl == RatePlan.TIERED ? rates.getTier1() : rates.peak(pl)) / 100));
+        }
+        if (n == 0) return new PriceSummary(0, 0, null, null, List.of(), null, null, 0, 0, round(EV_MONTH_KWH), best, peak, rates);
+        List<Double> profile = new ArrayList<>();
+        for (int h = 0; h < 24; h++) profile.add(hourN[h] == 0 ? null : round2(hourSum[h] / hourN[h]));
+        return new PriceSummary(n, round2(sum / n), lo, hi, profile, block(profile, true), block(profile, false),
+                gasN == 0 ? 0 : round2(gasSum / gasN), otherN == 0 ? 0 : round2(otherSum / otherN),
+                round(EV_MONTH_KWH), best, peak, rates);
+    }
+
+    private static double round2(double v) { return Math.round(v * 100) / 100.0; }
 
     /** Best (or worst) 3-hour block of the average day, wrapping past midnight. */
     private static Block block(List<Double> profile, boolean lowest) {

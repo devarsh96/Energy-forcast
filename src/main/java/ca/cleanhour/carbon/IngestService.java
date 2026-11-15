@@ -5,6 +5,8 @@ import ca.cleanhour.ieso.DayReport;
 import ca.cleanhour.ieso.Fuel;
 import ca.cleanhour.ieso.IesoClient;
 import ca.cleanhour.ieso.IesoClient.ScheduleVersion;
+import ca.cleanhour.ieso.PriceDay;
+import ca.cleanhour.pricing.PricingService;
 import ca.cleanhour.store.HourlyStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,10 +40,14 @@ public class IngestService {
     public static final String SRC_YEARLY = "GenOutputbyFuelHourly";
     public static final String SRC_SCHEDULE = "Adequacy3";
     public static final String SRC_DEMAND = "Demand";
+    public static final String SRC_PRICE_DA = "DAHourlyOntarioZonalPrice";
+    public static final String SRC_PRICE_PD = "PredispHourlyOntarioZonalPrice";
+    public static final String SRC_PRICE_RT = "RealtimeOntarioZonalPrice";
 
     private final IesoClient ieso;
     private final HourlyStore store;
     private final CarbonService dashboard;
+    private final PricingService pricing;
     private final int historyDays;
     private final int backfillDays;
 
@@ -49,11 +55,15 @@ public class IngestService {
     private final Map<Instant, EnumMap<Fuel, Double>> latestSchedule = new ConcurrentHashMap<>();
     private volatile Instant lastSlowFetch = Instant.EPOCH;
     private volatile boolean backfillRunning;
+    /** Real-time price hours we already tried to re-fetch (kept in memory only). */
+    private final Set<Instant> realtimeAttempted = ConcurrentHashMap.newKeySet();
 
-    public IngestService(IesoClient ieso, HourlyStore store, CarbonService dashboard, CleanHourProperties props) {
+    public IngestService(IesoClient ieso, HourlyStore store, CarbonService dashboard, PricingService pricing,
+                         CleanHourProperties props) {
         this.ieso = ieso;
         this.store = store;
         this.dashboard = dashboard;
+        this.pricing = pricing;
         this.historyDays = Math.max(1, props.getIeso().getHistoryDays());
         this.backfillDays = Math.max(historyDays, props.getBackfillDays());
     }
@@ -71,15 +81,19 @@ public class IngestService {
             if (store.actualHours(d) < 24) ieso.fetchOutput(d).ifPresent(store::putActual);
         }
 
+        ieso.fetchRealtimePrice(null, 0).ifPresent(p -> { store.putRealtimePrice(p); store.touch(SRC_PRICE_RT); });
+
         Instant now = Instant.now();
         if (Duration.between(lastSlowFetch, now).compareTo(SLOW_TTL) > 0) {
             fetchSchedules(today);
             fetchDemand(today);
+            fetchPrices(now);
             lastSlowFetch = now;
         }
 
         store.pruneBefore(startOf(today.minusDays(backfillDays + 1), 1));
         dashboard.rebuild(latestSchedule);
+        pricing.rebuild();
         store.save();
         log.info("Live refresh done in {} ms", System.currentTimeMillis() - t0);
     }
@@ -114,6 +128,25 @@ public class IngestService {
         if (any) store.touch(SRC_DEMAND);
     }
 
+    /** Day-ahead (tomorrow, once published), pre-dispatch (rest of today), and any incomplete real-time hours from the last day. */
+    private void fetchPrices(Instant now) {
+        ieso.fetchDayAheadPrice(null).ifPresent(p -> { store.putDayAheadPrice(p); store.touch(SRC_PRICE_DA); });
+        LocalDate today = LocalDate.now(EST);
+        if (!store.hasDayAheadPrice(today)) {
+            ieso.fetchDayAheadPrice(today).ifPresent(p -> { store.putDayAheadPrice(p); store.touch(SRC_PRICE_DA); });
+        }
+        ieso.fetchPredispatchPrice().ifPresent(p -> { store.putPredispatchPrice(p); store.touch(SRC_PRICE_PD); });
+
+        Instant currentHour = startOf(today, 1).plus(Duration.ofHours(Duration.between(startOf(today, 1), now).toHours()));
+        realtimeAttempted.removeIf(t -> t.isBefore(currentHour.minus(Duration.ofHours(30))));
+        for (var r : store.range(currentHour.minus(Duration.ofHours(24)), currentHour)) {
+            boolean complete = r.priceRealtimeIntervals != null && r.priceRealtimeIntervals >= 12;
+            if (complete || !realtimeAttempted.add(r.start)) continue;
+            var est = r.start.atOffset(EST);
+            ieso.fetchRealtimePrice(est.toLocalDate(), est.getHour() + 1).ifPresent(store::putRealtimePrice);
+        }
+    }
+
     @Scheduled(initialDelay = 15_000, fixedDelay = 12 * 3600_000L)
     public void backfill() {
         backfillRunning = true;
@@ -123,7 +156,9 @@ public class IngestService {
             LocalDate first = today.minusDays(backfillDays);
             backfillActuals(first, today.minusDays(historyDays + 1));
             backfillDayAhead(first, today);
+            backfillPrices(first, today);
             dashboard.rebuild(latestSchedule);
+            pricing.rebuild();
             store.save();
         } catch (RuntimeException e) {
             log.error("Backfill failed", e);
@@ -148,6 +183,22 @@ public class IngestService {
         }
     }
 
+    /** Day-ahead Ontario Zonal Price for each past day (IESO keeps about 3 months of daily files). */
+    private void backfillPrices(LocalDate first, LocalDate today) {
+        int loaded = 0, tried = 0;
+        for (LocalDate d = today; !d.isBefore(first); d = d.minusDays(1)) {
+            if (store.hasDayAheadPrice(d) || store.priceAttempted(d)) continue;
+            tried++;
+            IesoClient.Fetched<PriceDay> p = ieso.fetchDayAheadPriceResult(d);
+            if (p.value().isPresent()) { store.putDayAheadPrice(p.value().get()); loaded++; }
+            // Only give up on a past day when IESO says the file doesn't exist (aged out of the archive).
+            // A network error or outage is retried at the next backfill.
+            else if (p.notFound() && d.isBefore(today)) store.markPriceAttempted(d);
+        }
+        if (loaded > 0) store.touch(SRC_PRICE_DA);
+        if (tried > 0) log.info("Backfilled day-ahead prices for {} of {} days", loaded, tried);
+    }
+
     /**
      * For each delivery day, use the last Adequacy3 version published before that day began:
      * that is what IESO expected a day ahead.
@@ -169,12 +220,14 @@ public class IngestService {
         int loaded = 0;
         for (LocalDate d : missing) {
             ScheduleVersion v = pick.get(d);
+            boolean gone = true;
             if (v != null) {
-                Optional<DayReport> r = ieso.fetchScheduleFile(v.file());
-                if (r.isPresent()) { store.putDayAhead(r.get()); loaded++; continue; }
+                IesoClient.Fetched<DayReport> r = ieso.fetchScheduleFileResult(v.file());
+                if (r.value().isPresent()) { store.putDayAhead(r.value().get()); loaded++; continue; }
+                gone = r.notFound();
             }
-            // Past days with no archived version will never get one.
-            if (d.isBefore(today)) store.markDayAheadAttempted(d);
+            // Past days with no archived version will never get one; a failed download is retried later.
+            if (gone && d.isBefore(today)) store.markDayAheadAttempted(d);
         }
         if (loaded > 0) store.touch(SRC_SCHEDULE);
         log.info("Backfilled day-ahead schedules for {} of {} days", loaded, missing.size());
