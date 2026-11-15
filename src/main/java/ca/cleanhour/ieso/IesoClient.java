@@ -165,13 +165,39 @@ public class IesoClient {
     }
 
     private <T> Fetched<T> fetchResult(String path, Parser<T> parser) {
+        // IESO's server sometimes drops a kept-alive connection, which fails the next request on it with
+        // "header parser received no bytes". One retry (on a fresh connection) avoids losing that fetch.
+        for (int attempt = 1; ; attempt++) {
+            try {
+                return fetchOnce(path, parser);
+            } catch (IOException e) {
+                if (attempt >= 2) {
+                    log.warn("Failed to read IESO {}: {}", baseUrl + path, e.toString());
+                    return new Fetched<>(Optional.empty(), false);
+                }
+                log.debug("Retrying IESO {} after {}", baseUrl + path, e.toString());
+            }
+        }
+    }
+
+    /** One download. Connection-level errors are thrown so the caller can retry; everything else is handled here. */
+    private <T> Fetched<T> fetchOnce(String path, Parser<T> parser) throws IOException {
         URI uri = URI.create(baseUrl + path);
+        HttpResponse<InputStream> res;
         try {
             HttpRequest req = HttpRequest.newBuilder(uri)
                     .timeout(Duration.ofSeconds(120))
                     .header("User-Agent", "clean-hour-dashboard/0.2")
                     .GET().build();
-            HttpResponse<InputStream> res = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+            res = http.send(req, HttpResponse.BodyHandlers.ofInputStream());
+        } catch (java.net.http.HttpTimeoutException | RuntimeException e) {
+            log.warn("Failed to read IESO {}: {}", uri, e.toString());
+            return new Fetched<>(Optional.empty(), false);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return new Fetched<>(Optional.empty(), false);
+        }
+        try {
             try (InputStream body = res.body()) {
                 if (res.statusCode() != 200) {
                     log.info("IESO {} returned HTTP {}", uri, res.statusCode());
@@ -180,10 +206,8 @@ public class IesoClient {
                 return new Fetched<>(Optional.ofNullable(parser.parse(body)), false);
             }
         } catch (IOException | XMLStreamException | RuntimeException e) {
+            // A failure while reading the body (bad XML, dropped mid-download) is not retried: the next refresh will.
             log.warn("Failed to read IESO {}: {}", uri, e.toString());
-            return new Fetched<>(Optional.empty(), false);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
             return new Fetched<>(Optional.empty(), false);
         }
     }

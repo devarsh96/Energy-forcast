@@ -78,7 +78,8 @@ public class IngestService {
         ieso.fetchOutput(null).ifPresent(r -> { store.putActual(r); store.touch(SRC_OUTPUT); });
         for (int i = 1; i <= historyDays; i++) {
             LocalDate d = today.minusDays(i);
-            if (store.actualHours(d) < 24) ieso.fetchOutput(d).ifPresent(store::putActual);
+            // Re-fetch days with missing or partial hours (e.g. the last hour read before IESO had all units in).
+            if (store.actualHours(d, dashboard::complete) < 24) ieso.fetchOutput(d).ifPresent(store::putActual);
         }
 
         ieso.fetchRealtimePrice(null, 0).ifPresent(p -> { store.putRealtimePrice(p); store.touch(SRC_PRICE_RT); });
@@ -117,7 +118,8 @@ public class IngestService {
         Set<Integer> years = new TreeSet<>(List.of(today.minusDays(backfillDays).getYear(), today.getYear()));
         boolean any = false;
         for (int y : years) {
-            if (y != today.getYear() && store.sourceUpdated().containsKey(SRC_DEMAND + y)) continue; // past year is final
+            // A past year's file is final once it has the year's last hour (a fetch early on Jan 1 may not).
+            if (y != today.getYear() && store.demand(startOf(LocalDate.of(y, 12, 31), 24)) != null) continue;
             var demand = ieso.fetchDemand(y);
             if (demand.isPresent()) {
                 store.putDemand(demand.get(), from);
@@ -171,12 +173,12 @@ public class IngestService {
     private void backfillActuals(LocalDate first, LocalDate last) {
         Set<Integer> years = new TreeSet<>();
         for (LocalDate d = first; !d.isAfter(last); d = d.plusDays(1)) {
-            if (store.actualHours(d) < 24) years.add(d.getYear());
+            if (store.actualHours(d, dashboard::complete) < 24) years.add(d.getYear());
         }
         for (int y : years) {
             ieso.fetchYearlyFuel(y).ifPresent(days -> {
                 days.forEach((d, r) -> {
-                    if (!d.isBefore(first) && store.actualHours(d) < 24) store.putActual(r);
+                    if (!d.isBefore(first) && store.actualHours(d, dashboard::complete) < 24) store.putActual(r);
                 });
                 store.touch(SRC_YEARLY);
             });

@@ -134,4 +134,51 @@ class DataFixesTest {
         assertEquals(15.0, nov1.values().get(1), 1e-9); // (12 + 18) / 2
         assertEquals(12.0, nov1.values().get(2), 1e-9);
     }
+
+    @Test
+    void partialHoursCountAsMissingSoTheDayIsFetchedAgain() {
+        CleanHourProperties p = props("http://unused");
+        HourlyStore store = new HourlyStore(p);
+        CarbonService carbon = new CarbonService(store, new CarbonCalculator(p), p);
+        LocalDate d = LocalDate.of(2026, 11, 10);
+        Map<Integer, EnumMap<Fuel, Double>> hours = new TreeMap<>();
+        for (int he = 1; he <= 24; he++) hours.put(he, mix(8000, 2000, 4000));
+        hours.put(24, mix(900, 0, 0)); // read before most units had reported
+        store.putActual(new DayReport(d, hours));
+        assertEquals(24, store.actualHours(d));
+        assertEquals(23, store.actualHours(d, carbon::complete));
+    }
+
+    @Test
+    void pastYearDemandIsOnlyFinalOnceItHasTheLastHour() {
+        CleanHourProperties p = props("http://unused");
+        HourlyStore store = new HourlyStore(p);
+        Instant last = HourlyStore.startOf(LocalDate.of(2025, 12, 31), 24);
+        store.putDemand(Map.of(LocalDate.of(2025, 12, 31), Map.of(23, 15000.0)), Instant.EPOCH);
+        assertNull(store.demand(last));
+        store.putDemand(Map.of(LocalDate.of(2025, 12, 31), Map.of(24, 14500.0)), Instant.EPOCH);
+        assertEquals(14500.0, store.demand(last));
+    }
+
+    @Test
+    void droppedConnectionIsRetriedOnce() throws Exception {
+        // First connection is closed without a reply (what IESO's server sometimes does); the second answers 404.
+        try (ServerSocket server = new ServerSocket(0)) {
+            Thread t = new Thread(() -> {
+                try {
+                    server.accept().close();
+                    try (java.net.Socket c = server.accept()) {
+                        c.getInputStream().read(new byte[4096]);
+                        c.getOutputStream().write("HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                                .getBytes(java.nio.charset.StandardCharsets.US_ASCII));
+                    }
+                } catch (java.io.IOException ignored) { }
+            });
+            t.setDaemon(true);
+            t.start();
+            IesoClient client = new IesoClient(props("http://127.0.0.1:" + server.getLocalPort() + "/public"));
+            IesoClient.Fetched<?> r = client.fetchDayAheadPriceResult(LocalDate.of(2026, 11, 10));
+            assertTrue(r.notFound(), "the retry should reach the server's real answer");
+        }
+    }
 }

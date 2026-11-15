@@ -154,7 +154,7 @@ public class ApiController {
                 throw new IllegalArgumentException("Dates must be YYYY-MM-DD");
             }
             if (f.isAfter(t)) throw new IllegalArgumentException("'from' must be on or before 'to'");
-            if (f.plusDays(MAX_DAYS).isBefore(t)) throw new IllegalArgumentException("Range is limited to " + MAX_DAYS + " days");
+            if (f.plusDays(MAX_DAYS - 1).isBefore(t)) throw new IllegalArgumentException("Range is limited to " + MAX_DAYS + " days");
             Set<Fuel> set = EnumSet.noneOf(Fuel.class);
             if (fuels == null || fuels.isBlank()) set = EnumSet.allOf(Fuel.class);
             else for (String s : fuels.split(",")) {

@@ -173,9 +173,20 @@ public class HourlyStore {
 
     /** Number of hours with actual data for an EST delivery date. */
     public int actualHours(LocalDate estDate) {
+        return actualHours(estDate, m -> true);
+    }
+
+    /** Number of hours for an EST delivery date whose actual mix passes {@code complete}. */
+    public int actualHours(LocalDate estDate, java.util.function.Predicate<Map<Fuel, Double>> complete) {
         Instant from = startOf(estDate, 1);
         return (int) rows.subMap(from, true, from.plus(Duration.ofHours(24)), false).values().stream()
-                .filter(r -> r.actual != null).count();
+                .filter(r -> r.actual != null && complete.test(r.actual)).count();
+    }
+
+    /** Stored Ontario demand for the hour starting at {@code start}, or null. */
+    public Double demand(Instant start) {
+        HourRow r = rows.get(start);
+        return r == null ? null : r.demand;
     }
 
     public boolean hasDayAhead(LocalDate estDate) {

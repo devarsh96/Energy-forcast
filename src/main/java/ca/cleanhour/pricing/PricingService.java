@@ -190,7 +190,10 @@ public class PricingService {
                 for (int k = 0; k < hours; k++) {
                     cost += kwh / hours * tariff.price(p, ev.start().plus(Duration.ofHours(k))).cents() / 100;
                 }
-                double peak = kwh * tariff.ratesOn(ev.start().atZone(LOCAL).toLocalDate()).peak(p) / 100;
+                // Tiered charges the same at every hour (tier 1 unless the home is over the threshold), so there is no
+                // "on-peak" to save against: compare with tier 1, like the planner and the monthly report do.
+                RateSet rs = tariff.ratesOn(ev.start().atZone(LOCAL).toLocalDate());
+                double peak = kwh * (p == RatePlan.TIERED ? rs.getTier1() : rs.peak(p)) / 100;
                 out.put(p, new EvCost(ev.start(), ev.end(), kwh, r2(cost), r2(peak), r2(peak - cost)));
             }
         });

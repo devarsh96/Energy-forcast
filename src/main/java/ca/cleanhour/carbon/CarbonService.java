@@ -45,6 +45,11 @@ public class CarbonService {
         this.historyDays = Math.max(1, props.getIeso().getHistoryDays());
     }
 
+    /** True when a stored mix looks like a complete hour (the same test the dashboard uses). */
+    public boolean complete(Map<Fuel, Double> mix) {
+        return calc.complete(mix);
+    }
+
     public Optional<Dashboard> dashboard() {
         return Optional.ofNullable(snapshot);
     }
