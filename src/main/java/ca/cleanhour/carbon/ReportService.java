@@ -176,12 +176,13 @@ public class ReportService {
         HourStat cleanest = null, dirtiest = null;
         double fcAbs = 0;
         int fcN = 0;
-        double[] gas = new double[rows.size()];
+        double[] gas = new double[rows.size()], gasShare = new double[rows.size()];
         int i = 0;
         for (HourRow r : rows) {
             double t = calc.emissionsTonnes(r.actual), m = calc.countedMw(r.actual), v = calc.intensity(r.actual);
             tonnes += t; mwh += m;
             double g = r.actual.getOrDefault(Fuel.GAS, 0.0);
+            gasShare[i] = m > 0 ? g / m : 0;
             gas[i++] = g; gasSum += g;
             ZonedDateTime local = r.start.atZone(LOCAL);
             hourSum[local.getHour()] += v; hourN[local.getHour()]++;
@@ -192,13 +193,17 @@ public class ReportService {
             if (calc.complete(r.dayAhead)) { fcAbs += Math.abs(calc.intensity(r.dayAhead) - v); fcN++; }
         }
 
-        // Gas-led hours: gas in the upper part of this month's own range.
+        // Gas-led hours: the same rule as the live "High gas" dot (over 30% of supply and in the top fifth of
+        // the gas range), with this month's typical low and high (10th and 90th percentile) as the range.
         double[] sorted = gas.clone();
         Arrays.sort(sorted);
         double lo = CarbonService.percentile(sorted, 0.10), hi = CarbonService.percentile(sorted, 0.90);
-        double threshold = lo + 0.5 * (hi - lo);
-        int gasLed = 0;
-        for (double g : gas) if (g >= threshold) gasLed++;
+        Set<Instant> gasLedHours = new HashSet<>();
+        for (int k = 0; k < gas.length; k++) {
+            double ratio = Math.max(0, Math.min(1, (gas[k] - lo) / Math.max(1, hi - lo)));
+            if ("high".equals(CarbonService.gasLevel(gasShare[k], ratio))) gasLedHours.add(rows.get(k).start);
+        }
+        int gasLed = gasLedHours.size();
 
         List<Double> profile = new ArrayList<>();
         for (int h = 0; h < 24; h++) profile.add(hourN[h] == 0 ? null : round(hourSum[h] / hourN[h]));
@@ -229,16 +234,16 @@ public class ReportService {
                 cleanDay, dirtyDay, cleanest, dirtiest,
                 gasLed, CarbonService.round4((double) gasLed / rows.size()), round(gasSum / rows.size()),
                 counted > 0 ? CarbonService.round4(mix.getOrDefault(Fuel.GAS, 0.0) / counted) : 0,
-                String.format(Locale.ROOT, "Hours when gas output was at least %,.0f MW (halfway between this month's typical low of %,.0f MW and high of %,.0f MW)", threshold, lo, hi),
+                String.format(Locale.ROOT, "Hours when gas was over 30%% of supply and in the top fifth of this month's range (%,.0f to %,.0f MW), the same rule as the dashboard's \"High gas\" dot", lo, hi),
                 profile, best, worst, weekdays, carbon.shares(mix), daily,
                 fcN == 0 ? null : round(fcAbs / fcN), fcN == 0 ? null : fcN,
-                priceSummary(month, rows, threshold)));
+                priceSummary(month, rows, gasLedHours)));
     }
 
     /** Typical EV month: 3 charges of 40 kWh a week. */
     static final double EV_MONTH_KWH = 40 * 3 * 52 / 12.0;
 
-    private PriceSummary priceSummary(YearMonth month, List<HourRow> rows, double gasThreshold) {
+    private PriceSummary priceSummary(YearMonth month, List<HourRow> rows, Set<Instant> gasLedHours) {
         double sum = 0, gasSum = 0, otherSum = 0;
         int n = 0, gasN = 0, otherN = 0;
         double[] hourSum = new double[24];
@@ -251,7 +256,7 @@ public class ReportService {
             sum += c; n++;
             int h = r.start.atZone(LOCAL).getHour();
             hourSum[h] += c; hourN[h]++;
-            if (r.actual.getOrDefault(Fuel.GAS, 0.0) >= gasThreshold) { gasSum += c; gasN++; } else { otherSum += c; otherN++; }
+            if (gasLedHours.contains(r.start)) { gasSum += c; gasN++; } else { otherSum += c; otherN++; }
             if (lo == null || c < lo.cents()) lo = new HourPrice(r.start, round2(c));
             if (hi == null || c > hi.cents()) hi = new HourPrice(r.start, round2(c));
         }

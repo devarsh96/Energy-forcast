@@ -130,8 +130,12 @@
     const max = Math.max(...rows.map((r) => r.v), 1);
     let html = rows.map((r) =>
       `<div class="ev-row"><span>${r.label}</span><div class="bar${r.best ? " best" : ""}" style="width:${(r.v / max) * 100}%"></div><b>${n0.format(r.v)}</b></div>`).join("");
-    const kgBest = ev.kgCo2Best, kgNow = ev.kgCo2Now;
-    const charge = `${n1.format(ev.chargeKwh)} kWh charge (3 hours at ${n1.format(ev.chargerKw)} kW)`;
+    // Size the charge from the EV settings saved in the Savings Calculator, like the rest of the page.
+    const ec = window.CHP ? CHP.evCharge3h(CHP.load()) : { kwh: ev.chargeKwh, kw: ev.chargerKw, full: ev.chargeKwh };
+    const kgBest = ev.avgIntensity * ec.kwh / 1000, kgNow = ev.nowIntensity * ec.kwh / 1000;
+    const charge = ec.full > ec.kwh + 0.05
+      ? `${n1.format(ec.kwh)} kWh charge (3 hours at ${n1.format(ec.kw)} kW, part of your ${n1.format(ec.full)} kWh charge)`
+      : `${n1.format(ec.kwh)} kWh charge at ${n1.format(ec.kw)} kW`;
     if (ev.savingVsNowPct > 1) {
       html += `<div class="ev-save">A ${charge} then emits about <strong>${n1.format(kgBest)} kg CO₂e</strong>, versus ${n1.format(kgNow)} kg right now (${n0.format(ev.savingVsNowPct)}% less).</div>`;
     } else {
@@ -296,6 +300,7 @@
     setTimeout(load, REFRESH_MS);
   }
 
+  window.addEventListener("cleanhour:settings", () => last && renderEv(last));
   let rt;
   window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => last && renderTimeline(last), 150); });
   load();

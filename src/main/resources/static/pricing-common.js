@@ -64,6 +64,17 @@
     const add = Math.max(0, (Number(s.socTo) - Number(s.socFrom)) / 100) * Math.max(0, Number(s.battery));
     return Math.round((add / WALL_EFFICIENCY) * 10) / 10;
   }
+  /**
+   * The part of your EV charge that fits the dashboard's 3-hour window at your charger's power.
+   * {kwh: energy in the window, kw, full: the whole charge from the wall}
+   */
+  function evCharge3h(s) {
+    const kw = Math.max(1, Number(s.kw) || 7.2), full = kwhFromWall(s);
+    return { kw, full: full > 0 ? full : kw * 3, kwh: full > 0 ? Math.min(full, kw * 3) : kw * 3 };
+  }
+  /** "on-peak", or for Tiered the tier the whole charge is compared with. */
+  function peakWord(s) { return s.plan === "TIERED" ? (s.overTier ? "tier 2" : "tier 1") : "on-peak"; }
+
   /** Next time within the forecast hours that the local clock reads the chosen "ready by" hour, or null. */
   function readyByInstant(s, snap) {
     if (s.ready === "" || s.ready == null || !snap) return null;
@@ -212,7 +223,7 @@
   }
 
   window.CHP = { KEY, DEFAULTS, PLAN_NAME, PLAN_SHORT, PERIOD_COLOR, load, save, update, onChange, billFactor, cents, dollars,
-    prices, kwhFromWall, readyByInstant, chargePlan, hourChart, localHour, esc,
+    prices, kwhFromWall, evCharge3h, peakWord, readyByInstant, chargePlan, hourChart, localHour, esc,
     money: (v) => moneyFmt.format(v), c1: (v) => c1Fmt.format(v) };
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountNav); else mountNav();

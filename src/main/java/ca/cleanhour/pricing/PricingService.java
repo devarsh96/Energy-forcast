@@ -214,10 +214,10 @@ public class PricingService {
 
     public ChargePlan plan(RatePlan plan, double kwh, double kw, Instant readyBy, boolean overTier) {
         Instant now = Instant.now();
-        ChargePlanner.Result result = ChargePlanner.plan(slots(plan, overTier, now), kwh, kw, readyBy);
+        ChargePlanner.Result result = ChargePlanner.plan(slots(plan, overTier, now), kwh, kw, readyBy, now);
         Map<RatePlan, ChargePlanner.Window> byPlan = new EnumMap<>(RatePlan.class);
         for (RatePlan p : RatePlan.values()) {
-            ChargePlanner.Result r = p == plan ? result : ChargePlanner.plan(slots(p, overTier, now), kwh, kw, readyBy);
+            ChargePlanner.Result r = p == plan ? result : ChargePlanner.plan(slots(p, overTier, now), kwh, kw, readyBy, now);
             ChargePlanner.Window w = r.cheapest() != null ? r.cheapest() : r.now();
             if (w != null) byPlan.put(p, w);
         }

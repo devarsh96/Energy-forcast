@@ -75,11 +75,19 @@
   function renderEvCost() {
     const el = $("ev-cost"), ev = snap.evWindowCost && snap.evWindowCost[s.plan];
     if (!el || !ev) return;
-    const cost = CHP.dollars(ev.cost, ev.kwh, s, snap), peak = CHP.dollars(ev.peakCost, ev.kwh, s, snap);
-    const peakWord = s.plan === "TIERED" ? "tier 2" : "on-peak";
-    el.innerHTML = `On ${CHP.PLAN_SHORT[s.plan]} this ${CH.fmt.n1(ev.kwh)} kWh charge costs about <strong>${CHP.money(cost)}</strong>` +
-      (peak - cost >= 0.01 ? `, ${CHP.money(peak - cost)} less than at ${peakWord}` : "") +
-      `. <a href="calculator.html">Plan your charge →</a>`;
+    // Same charge size as the carbon line above: your EV settings, capped at 3 hours of charging.
+    const kwh = CHP.evCharge3h(s).kwh;
+    const link = ` <a href="calculator.html">Plan your charge →</a>`;
+    if (s.plan === "TIERED") {
+      const cents = s.overTier ? snap.rates.tier2 : snap.rates.tier1;
+      el.innerHTML = `On Tiered this ${CH.fmt.n1(kwh)} kWh costs about <strong>${CHP.money(CHP.dollars(kwh * cents / 100, kwh, s, snap))}</strong> ` +
+        `(${s.overTier ? "tier 2" : "tier 1"}), the same at any hour.` + link;
+      return;
+    }
+    const scale = ev.kwh > 0 ? kwh / ev.kwh : 0;   // the server prices the window evenly per kWh
+    const cost = CHP.dollars(ev.cost * scale, kwh, s, snap), peak = CHP.dollars(ev.peakCost * scale, kwh, s, snap);
+    el.innerHTML = `On ${CHP.PLAN_SHORT[s.plan]} this ${CH.fmt.n1(kwh)} kWh charge costs about <strong>${CHP.money(cost)}</strong>` +
+      (peak - cost >= 0.01 ? `, ${CHP.money(peak - cost)} less than at on-peak` : "") + "." + link;
   }
 
   function renderStrip() {

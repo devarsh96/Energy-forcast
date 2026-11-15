@@ -271,7 +271,9 @@
       const t = hi > lo ? (item.v - lo) / (hi - lo) : 0.5;
       s += `<rect class="cal" data-k="${key}" x="${cx}" y="${cy}" width="${cell}" height="${cell}" rx="3" fill="${rampColor(t)}"/>`;
     }
-    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${W * 1.6}px" role="img" aria-label="${opts.label || "calendar heatmap"}">${s}</svg>`;
+    // Cap the size so a short history (a few weeks) isn't blown up to the full card width.
+    const maxW = W * 1.6;
+    el.innerHTML = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${maxW}px;min-width:${Math.min(420, maxW)}px" role="img" aria-label="${opts.label || "calendar heatmap"}">${s}</svg>`;
     el.querySelectorAll(".cal").forEach((r) => {
       const item = byKey.get(r.dataset.k);
       r.addEventListener("mousemove", (e) => tip.show(e, item.tip));

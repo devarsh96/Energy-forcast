@@ -73,4 +73,19 @@ class ChargePlannerTest {
         assertEquals(0.28, r.cheapest().kgCo2(), 1e-9); // its own hour does have a forecast
         assertNull(ChargePlanner.window(slots, 6, 7, 7).kgCo2()); // hour 6 has no forecast
     }
+
+    @Test
+    void startNowUsesOnlyTheRestOfTheCurrentHour() {
+        List<Slot> slots = new ArrayList<>();
+        for (int i = 0; i < 8; i++) slots.add(new Slot(T0.plus(Duration.ofHours(i)), 10, 50.0));
+        Instant now = T0.plus(Duration.ofMinutes(45));
+        var r = ChargePlanner.plan(slots, 14, 7, null, now);
+        assertEquals(now, r.now().start());
+        // 15 minutes left in the first hour (1.75 kWh), then 7 kWh, then 5.25 kWh: 2 hours of charging in all
+        assertEquals(now.plus(Duration.ofHours(2)), r.now().end());
+        assertEquals(2.0, r.now().hours(), 1e-9);
+        // A ready-by of 2 hours after the hour can't be met by starting now any more
+        var tight = ChargePlanner.plan(slots, 14, 7, T0.plus(Duration.ofHours(2)), now);
+        assertEquals(0, tight.candidates());
+    }
 }

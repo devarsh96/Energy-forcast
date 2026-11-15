@@ -123,7 +123,7 @@
         (w.kgCo2 == null ? `<span class="o-sub">No carbon forecast</span>`
           : `<span class="o-sub">${fmt.n1(w.kgCo2)} kg CO₂e · ${fmt.n0(w.avgIntensity)} g/kWh</span>`) +
         (vsNow != null && Math.abs(vsNow) >= 0.01 ? `<span class="o-save${vsNow < 0 ? " neg" : ""}">${vsNow >= 0 ? "Saves " + CHP.money(vsNow) : "Costs " + CHP.money(-vsNow) + " more"} vs. now</span>` : "") +
-        (vsPeak >= 0.01 ? `<span class="o-save">Saves ${CHP.money(vsPeak)} vs. on-peak</span>` : "") +
+        (vsPeak >= 0.01 ? `<span class="o-save">Saves ${CHP.money(vsPeak)} vs. ${CHP.peakWord(s)}</span>` : "") +
         `</button>`;
     }).join("");
     $("options").querySelectorAll(".option").forEach((b) => b.addEventListener("click", () => {
@@ -131,7 +131,7 @@
       renderOptions(); markTasks(); renderSide();
     }));
     const rb = CHP.readyByInstant(s, prices);
-    const peakTxt = s.plan === "TIERED" && !s.overTier ? "tier 1" : "on-peak";
+    const peakTxt = CHP.peakWord(s);
     $("planner-note").textContent = (r.note ? r.note + " " : "") +
       `${CHP.PLAN_NAME[s.plan]} plan. The ${peakTxt} comparison prices the whole charge at ${CHP.c1(CHP.cents(plan.peakCents, s, prices))}¢/kWh (${CHP.money(peak)}).` +
       (rb ? ` Must finish by ${fmt.time(rb)} ${dayWord(rb)}.` : "") +
@@ -139,7 +139,16 @@
   }
 
   // ---------------------------------------------------------------- household tasks
-  function nowSeries() { return [data.now.intensity, ...data.hours.map((h) => h.intensity)]; }
+  /**
+   * Intensity for "start now", hour by hour from the current clock hour. The forecast starts at the current hour;
+   * the latest IESO hour (usually an hour or two old) is only used if the forecast doesn't cover this hour yet.
+   */
+  function nowSeries() {
+    const h0 = hourFloor(Date.now());
+    const fc = data.hours.filter((h) => new Date(h.start).getTime() >= h0);
+    const lead = fc.length && new Date(fc[0].start).getTime() === h0 ? [] : [data.now.intensity];
+    return [...lead, ...fc.map((h) => h.intensity)];
+  }
 
   function compute(task) {
     const hours = Math.max(1, Math.min(24, Math.ceil(task.hours || 1)));

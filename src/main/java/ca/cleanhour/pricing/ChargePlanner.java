@@ -31,29 +31,37 @@ public final class ChargePlanner {
      * @param readyBy  the charge must finish by this time, or null for "any time in the slots"
      */
     public static Result plan(List<Slot> slots, double kwh, double kw, Instant readyBy) {
+        return plan(slots, kwh, kw, readyBy, null);
+    }
+
+    /**
+     * @param now  the real time. The first slot is the current hour, so a charge started now only has the rest of
+     *             that hour; later starts begin at the top of an hour. Null treats the first slot as a full hour.
+     */
+    public static Result plan(List<Slot> slots, double kwh, double kw, Instant readyBy, Instant now) {
         double hours = kwh / kw;
         if (slots.isEmpty() || kwh <= 0 || kw <= 0) {
             return new Result(kwh, kw, hours, null, null, null, null, 0, "Nothing to plan.");
         }
         List<Window> all = new ArrayList<>();
         for (int i = 0; i < slots.size(); i++) {
-            Window w = window(slots, i, kwh, kw);
-            if (w == null) break; // later starts have even fewer hours left
+            Window w = window(slots, i, kwh, kw, i == 0 ? now : null);
+            if (w == null) continue; // runs past the forecast or across a gap
             if (readyBy != null && w.end().isAfter(readyBy)) continue;
             all.add(w);
         }
-        Window now = window(slots, 0, kwh, kw);
+        Window startNow = window(slots, 0, kwh, kw, now);
         if (all.isEmpty()) {
-            String note = now == null
+            String note = startNow == null
                     ? "This charge needs more hours than the forecast covers. Try a faster charger or a smaller top-up."
                     : "The charge can't finish by the ready-by time. Showing what starting now would cost.";
-            return new Result(kwh, kw, hours, now, null, null, null, 0, note);
+            return new Result(kwh, kw, hours, startNow, null, null, null, 0, note);
         }
         if (all.stream().anyMatch(w -> w.kgCo2() == null)) {
             // Without a carbon forecast for every hour, only cost can be compared honestly.
             Window cheap = all.get(0);
             for (Window w : all) if (w.cost() < cheap.cost() - 1e-9) cheap = w;
-            return new Result(kwh, kw, hours, now, cheap, null, null, all.size(),
+            return new Result(kwh, kw, hours, startNow, cheap, null, null, all.size(),
                     "No carbon forecast is available for some of these hours, so only cost is compared.");
         }
         Window cheap = all.get(0), clean = all.get(0);
@@ -73,11 +81,20 @@ public final class ChargePlanner {
             double score = 0.5 * c + 0.5 * g;
             if (score < bestScore - 1e-9) { bestScore = score; bal = w; }
         }
-        return new Result(kwh, kw, hours, now, cheap, clean, bal, all.size(), null);
+        return new Result(kwh, kw, hours, startNow, cheap, clean, bal, all.size(), null);
     }
 
     /** Charging that starts at slot {@code i}, or null if the slots run out first. */
     static Window window(List<Slot> slots, int i, double kwh, double kw) {
+        return window(slots, i, kwh, kw, null);
+    }
+
+    /** As above; {@code startAt} (inside slot i) starts the charge part-way through that hour. */
+    static Window window(List<Slot> slots, int i, double kwh, double kw, Instant startAt) {
+        Instant slotStart = slots.get(i).start();
+        Instant start = startAt != null && startAt.isAfter(slotStart) && startAt.isBefore(slotStart.plus(Duration.ofHours(1)))
+                ? startAt : slotStart;
+        double firstHour = Duration.between(start, slotStart.plus(Duration.ofHours(1))).toMillis() / 3_600_000.0;
         double left = kwh, cost = 0, grams = 0, hours = 0;
         boolean carbonKnown = true;
         int j = i;
@@ -85,7 +102,7 @@ public final class ChargePlanner {
             if (j >= slots.size()) return null;
             Slot s = slots.get(j);
             if (j > i && !s.start().equals(slots.get(j - 1).start().plus(Duration.ofHours(1)))) return null; // gap
-            double e = Math.min(left, kw);
+            double e = Math.min(left, kw * (j == i ? firstHour : 1));
             cost += e * s.cents() / 100.0;
             if (s.gPerKwh() == null) carbonKnown = false;
             else grams += e * s.gPerKwh();
@@ -93,7 +110,6 @@ public final class ChargePlanner {
             left -= e;
             j++;
         }
-        Instant start = slots.get(i).start();
         Instant end = start.plusSeconds(Math.round(hours * 3600));
         return new Window(start, end, r2(hours), r2(cost), carbonKnown ? r2(grams / 1000.0) : null,
                 r2(cost * 100 / kwh), carbonKnown ? r1(grams / kwh) : null);
